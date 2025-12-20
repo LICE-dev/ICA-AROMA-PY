@@ -10,6 +10,8 @@ from pathlib import Path
 from . import ICA_AROMA_functions as aromafunc
 from .classification_plots import classification_plot
 
+# Denoising types accepted
+accepted_denTypes = {'nonaggr', 'aggr', 'both', 'no'}
 
 def run_aroma(
     outDir,
@@ -111,7 +113,7 @@ def run_aroma(
             cancel = True
 
     # Check if the type of denoising is correctly specified, when specified
-    if not (denType == 'nonaggr') and not (denType == 'aggr') and not (denType == 'both') and not (denType == 'no'):
+    if denType not in accepted_denTypes:
         print('Type of denoising was not correctly specified. Non-aggressive denoising will be run.')
         denType = 'nonaggr'
 

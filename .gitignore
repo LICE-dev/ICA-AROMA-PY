@@ -135,9 +135,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-..ica-aroma-py_env
-.ica-aroma-py_env
-.ica-aroma-py_env/
+..ica-aroma-py_venv
+.ica-aroma-py_venv
+.ica-aroma-py_venv/
 
 # Spyder project settings
 .spyderproject
