@@ -2,15 +2,7 @@
 
 # Functions for ICA-AROMA v0.3 beta
 
-from __future__ import division
-from __future__ import print_function
-from future import standard_library
-standard_library.install_aliases()
-from builtins import str
-from builtins import range
-from past.utils import old_div
 import numpy as np
-
 
 def runICA(fslDir, inFile, outDir, melDirIn, mask, dim, TR):
     """ This function runs MELODIC and merges the mixture modeled thresholded ICs into a single 4D nifti file
@@ -303,10 +295,10 @@ def feature_frequency(melFTmix, TR):
     import numpy as np
 
     # Determine sample frequency
-    Fs = old_div(1, TR)
+    Fs = 1.0 / TR
 
     # Determine Nyquist-frequency
-    Ny = old_div(Fs, 2)
+    Ny = Fs / 2.0
 
     # Load melodic_FTmix file
     FT = np.loadtxt(melFTmix)
@@ -320,10 +312,10 @@ def feature_frequency(melFTmix, TR):
     f = f[fincl]
 
     # Set frequency range to [0-1]
-    f_norm = old_div((f - 0.01), (Ny - 0.01))
+    f_norm = (f - 0.01) / (Ny - 0.01)
 
     # For every IC; get the cumulative sum as a fraction of the total sum
-    fcumsum_fract = old_div(np.cumsum(FT, axis=0), np.sum(FT, axis=0))
+    fcumsum_fract = np.cumsum(FT, axis=0) / np.sum(FT, axis=0)
 
     # Determine the index of the frequency with the fractional cumulative sum closest to 0.5
     idx_cutoff = np.argmin(np.abs(fcumsum_fract - 0.5), axis=0)
@@ -342,7 +334,8 @@ def feature_spatial(fslDir, tempDir, aromaDir, melIC):
     ---------------------------------------------------------------------------------
     fslDir:     Full path of the bin-directory of FSL
     tempDir:    Full path of a directory where temporary files can be stored (called 'temp_IC.nii.gz')
-    aromaDir:   Full path of the ICA-AROMA directory, containing the mask-files (mask_edge.nii.gz, mask_csf.nii.gz & mask_out.nii.gz) 
+    aromaDir:   Full path of the ICA-AROMA directory, containing the mask-files (mask_edge.nii.gz, mask_csf.nii.gz & mask_out.nii.gz)
+                NOTE: In the pip-packaged version this should point to the package resources directory (e.g. ica_aroma_py/resources).
     melIC:      Full path of the nii.gz file containing mixture-modeled threholded (p>0.5) Z-maps, registered to the MNI152 2mm template
 
     Returns
@@ -354,6 +347,19 @@ def feature_spatial(fslDir, tempDir, aromaDir, melIC):
     import numpy as np
     import os
     import subprocess
+
+    # Define the mask files (do NOT rely on the current working directory)
+    mask_csf = os.path.join(aromaDir, 'mask_csf.nii.gz')
+    mask_edge = os.path.join(aromaDir, 'mask_edge.nii.gz')
+    mask_out = os.path.join(aromaDir, 'mask_out.nii.gz')
+
+    # Check whether the masks exist
+    if not os.path.isfile(mask_csf):
+        raise FileNotFoundError('The specified CSF mask does not exist: ' + mask_csf)
+    if not os.path.isfile(mask_edge):
+        raise FileNotFoundError('The specified edge mask does not exist: ' + mask_edge)
+    if not os.path.isfile(mask_out):
+        raise FileNotFoundError('The specified outside-brain mask does not exist: ' + mask_out)
 
     # Get the number of ICs
     numICs = int(subprocess.getoutput('%sfslinfo %s | grep dim4 | head -n1 | awk \'{print $2}\'' % (fslDir, melIC) ))
@@ -396,13 +402,13 @@ def feature_spatial(fslDir, tempDir, aromaDir, melIC):
         # Get sum of Z-values of the voxels located within the CSF (calculate via the mean and number of non-zero voxels)
         csfVox = int(subprocess.getoutput(' '.join([os.path.join(fslDir, 'fslstats'),
                                                     tempIC,
-                                                    '-k mask_csf.nii.gz',
+                                                    '-k ' + mask_csf,
                                                     '-V | awk \'{print $1}\''])))
 
         if not (csfVox == 0):
             csfMean = float(subprocess.getoutput(' '.join([os.path.join(fslDir, 'fslstats'),
                                                            tempIC,
-                                                           '-k mask_csf.nii.gz',
+                                                           '-k ' + mask_csf,
                                                            '-M'])))
         else:
             csfMean = 0
@@ -412,12 +418,13 @@ def feature_spatial(fslDir, tempDir, aromaDir, melIC):
         # Get sum of Z-values of the voxels located within the Edge (calculate via the mean and number of non-zero voxels)
         edgeVox = int(subprocess.getoutput(' '.join([os.path.join(fslDir, 'fslstats'),
                                                      tempIC,
-                                                     '-k mask_edge.nii.gz',
+                                                     '-k ' + mask_edge,
                                                      '-V | awk \'{print $1}\''])))
+
         if not (edgeVox == 0):
             edgeMean = float(subprocess.getoutput(' '.join([os.path.join(fslDir, 'fslstats'),
                                                             tempIC,
-                                                            '-k mask_edge.nii.gz',
+                                                            '-k ' + mask_edge,
                                                             '-M'])))
         else:
             edgeMean = 0
@@ -427,12 +434,13 @@ def feature_spatial(fslDir, tempDir, aromaDir, melIC):
         # Get sum of Z-values of the voxels located outside the brain (calculate via the mean and number of non-zero voxels)
         outVox = int(subprocess.getoutput(' '.join([os.path.join(fslDir, 'fslstats'),
                                                     tempIC,
-                                                    '-k mask_out.nii.gz',
+                                                    '-k ' + mask_out,
                                                     '-V | awk \'{print $1}\''])))
+
         if not (outVox == 0):
             outMean = float(subprocess.getoutput(' '.join([os.path.join(fslDir, 'fslstats'),
                                                            tempIC,
-                                                           '-k mask_out.nii.gz',
+                                                           '-k ' + mask_out,
                                                            '-M'])))
         else:
             outMean = 0
@@ -441,14 +449,15 @@ def feature_spatial(fslDir, tempDir, aromaDir, melIC):
 
         # Determine edge and CSF fraction
         if not (totSum == 0):
-            edgeFract[i] = old_div((outSum + edgeSum), (totSum - csfSum))
-            csfFract[i] = old_div(csfSum, totSum)
+            edgeFract[i] = (outSum + edgeSum) / (totSum - csfSum) if not ((totSum - csfSum) == 0) else 0
+            csfFract[i] = csfSum / totSum
         else:
             edgeFract[i] = 0
             csfFract[i] = 0
 
     # Remove the temporary IC-file
-    os.remove(tempIC)
+    if os.path.isfile(tempIC):
+        os.remove(tempIC)
 
     # Return feature scores
     return edgeFract, csfFract

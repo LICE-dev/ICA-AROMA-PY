@@ -1,6 +1,3 @@
-from __future__ import print_function
-
-
 def classification_plot(myinput, outDir):
 
     import pandas as pd
@@ -162,27 +159,40 @@ def classification_plot(myinput, outDir):
 
     # plot distributions
     # RP
-    sns.distplot(df.loc[df['Motion'] == "True", "RP"],
-                 ax=ax1t,
-                 color=colortrue,
-                 hist_kws={'alpha': 0.2})
-    sns.distplot(df.loc[df['Motion'] == "False", "RP"],
-                 ax=ax1t,
-                 color=colorfalse,
-                 hist_kws={'alpha': 0.2})
+    sns.histplot(df.loc[df['Motion'] == "True", "RP"],
+                ax=ax1t,
+                color=colortrue,
+                kde=True,
+                stat="density",
+                element="step",
+                alpha=0.2)
+    sns.histplot(df.loc[df['Motion'] == "False", "RP"],
+                ax=ax1t,
+                color=colorfalse,
+                kde=True,
+                stat="density",
+                element="step",
+                alpha=0.2)
     ax1t.set_xlim([0, 1])
 
     # Edge
-    sns.distplot(df.loc[df['Motion'] == "True", "Edge"],
-                 ax=ax1r,
-                 vertical=True,
-                 color=colortrue,
-                 hist_kws={'alpha': 0.2})
-    sns.distplot(df.loc[df['Motion'] == "False", "Edge"],
-                 ax=ax1r,
-                 vertical=True,
-                 color=colorfalse,
-                 hist_kws={'alpha': 0.2})
+    sns.histplot(df.loc[df['Motion'] == "True", "Edge"],
+                ax=ax1r,
+                color=colortrue,
+                kde=True,
+                stat="density",
+                element="step",
+                alpha=0.2,
+                orientation="horizontal")
+    sns.histplot(df.loc[df['Motion'] == "False", "Edge"],
+                ax=ax1r,
+                color=colorfalse,
+                kde=True,
+                stat="density",
+                element="step",
+                alpha=0.2,
+                orientation="horizontal")
+
     ax1r.set_ylim([0, 1])
 
     # cosmetics
@@ -202,8 +212,9 @@ def classification_plot(myinput, outDir):
 
     # add figure title
     plt.suptitle('Component Assessment', fontsize=20)
-
+    
     # outtakes
+    os.makedirs(outDir, exist_ok=True)
     plt.savefig(os.path.join(outDir, 'ICA_AROMA_component_assessment.pdf'),
                 bbox_inches='tight')
 
