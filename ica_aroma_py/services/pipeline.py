@@ -222,7 +222,7 @@ def run_aroma(
 
     print('\n----------------------------------- Finished -----------------------------------\n')
 
-    # Return some useful outputs for SWANe (optional, but handy)
+    # Return some useful outputs
     return {
         "outDir": outDir,
         "TR": TR,
