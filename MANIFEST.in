@@ -1,0 +1,1 @@
+recursive-include ica_aroma_py/resources *.nii.gz
