@@ -5,7 +5,8 @@
 import numpy as np
 
 def runICA(fslDir, inFile, outDir, melDirIn, mask, dim, TR):
-    """ This function runs MELODIC and merges the mixture modeled thresholded ICs into a single 4D nifti file
+    """
+    This function runs MELODIC and merges the mixture modeled thresholded ICs into a single 4D nifti file
 
     Parameters
     ---------------------------------------------------------------------------------
@@ -20,7 +21,8 @@ def runICA(fslDir, inFile, outDir, melDirIn, mask, dim, TR):
     Output (within the requested output directory)
     ---------------------------------------------------------------------------------
     melodic.ica     MELODIC directory
-    melodic_IC_thr.nii.gz   merged file containing the mixture modeling thresholded Z-statistical maps located in melodic.ica/stats/ """
+    melodic_IC_thr.nii.gz   merged file containing the mixture modeling thresholded Z-statistical maps located in melodic.ica/stats/
+    """
 
     # Import needed modules
     import os
@@ -85,7 +87,10 @@ def runICA(fslDir, inFile, outDir, melDirIn, mask, dim, TR):
                     '| grep dim4 | head -n1 | awk \'{print $2}\''])
     nrICs = int(float(subprocess.getoutput(cmd)))
 
-    # Merge mixture modeled thresholded spatial maps. Note! In case that mixture modeling did not converge, the file will contain two spatial maps. The latter being the results from a simple null hypothesis test. In that case, this map will have to be used (first one will be empty).
+    # Merge mixture modeled thresholded spatial maps.
+    # Note! In case that mixture modeling did not converge, the file will contain two spatial maps.
+    # The latter being the results from a simple null hypothesis test.
+    # In that case, this map will have to be used (first one will be empty).
     for i in range(1, nrICs + 1):
         # Define thresholded zstat-map file
         zTemp = os.path.join(melDir, 'stats', 'thresh_zstat' + str(i) + '.nii.gz')
@@ -124,7 +129,14 @@ def runICA(fslDir, inFile, outDir, melDirIn, mask, dim, TR):
 
 
 def register2MNI(fslDir, inFile, outFile, affmat, warp):
-    """ This function registers an image (or time-series of images) to MNI152 T1 2mm. If no affmat is defined, it only warps (i.e. it assumes that the data has been registerd to the structural scan associated with the warp-file already). If no warp is defined either, it only resamples the data to 2mm isotropic if needed (i.e. it assumes that the data has been registered to a MNI152 template). In case only an affmat file is defined, it assumes that the data has to be linearly registered to MNI152 (i.e. the user has a reason not to use non-linear registration on the data).
+    """
+    This function registers an image (or time-series of images) to MNI152 T1 2mm.
+    If no affmat is defined, it only warps (i.e. it assumes that the data has been registered
+    to the structural scan associated with the warp-file already).
+    If no warp is defined either, it only resamples the data to 2mm isotropic if needed
+    (i.e. it assumes that the data has been registered to a MNI152 template).
+    In case only an affmat file is defined, it assumes that the data has to be linearly registered to MNI152
+    (i.e. the user has a reason not to use non-linear registration on the data).
 
     Parameters
     ---------------------------------------------------------------------------------
@@ -136,7 +148,8 @@ def register2MNI(fslDir, inFile, outFile, affmat, warp):
 
     Output (within the requested output directory)
     ---------------------------------------------------------------------------------
-    melodic_IC_mm_MNI2mm.nii.gz merged file containing the mixture modeling thresholded Z-statistical maps registered to MNI152 2mm """
+    melodic_IC_mm_MNI2mm.nii.gz merged file containing the mixture modeling thresholded Z-statistical maps registered to MNI152 2mm
+    """
 
 
     # Import needed modules
@@ -147,7 +160,8 @@ def register2MNI(fslDir, inFile, outFile, affmat, warp):
     fslnobin = fslDir.rsplit('/', 2)[0]
     ref = os.path.join(fslnobin, 'data', 'standard', 'MNI152_T1_2mm_brain.nii.gz')
 
-    # If the no affmat- or warp-file has been specified, assume that the data is already in MNI152 space. In that case only check if resampling to 2mm is needed
+    # If the no affmat- or warp-file has been specified, assume that the data is already in MNI152 space.
+    # In that case only check if resampling to 2mm is needed
     if (len(affmat) == 0) and (len(warp) == 0):
         # Get 3D voxel size
         pixdim1 = float(subprocess.getoutput('%sfslinfo %s | grep pixdim1 | awk \'{print $2}\'' % (fslDir, inFile)))
@@ -164,7 +178,8 @@ def register2MNI(fslDir, inFile, outFile, affmat, warp):
         else:
             os.system('cp ' + inFile + ' ' + outFile)
 
-    # If only a warp-file has been specified, assume that the data has already been registered to the structural scan. In that case apply the warping without a affmat
+    # If only a warp-file has been specified, assume that the data has already been registered to the structural scan.
+    # In that case apply the warping without a affmat
     elif (len(affmat) == 0) and (len(warp) != 0):
         # Apply warp
         os.system(' '.join([os.path.join(fslDir, 'applywarp'),
@@ -276,7 +291,8 @@ def feature_time_series(melmix, mc):
 
 
 def feature_frequency(melFTmix, TR):
-    """ This function extracts the high-frequency content feature scores.
+    """
+    This function extracts the high-frequency content feature scores.
     It determines the frequency, as fraction of the Nyquist frequency,
     at which the higher and lower frequencies explain half
     of the total power between 0.01Hz and Nyquist.
@@ -289,7 +305,8 @@ def feature_frequency(melFTmix, TR):
     Returns
     ---------------------------------------------------------------------------------
     HFC:        Array of the HFC ('High-frequency content') feature scores
-    for the components of the melodic_FTmix file"""
+    for the components of the melodic_FTmix file
+    """
 
     # Import required modules
     import numpy as np
@@ -328,7 +345,10 @@ def feature_frequency(melFTmix, TR):
 
 
 def feature_spatial(fslDir, tempDir, aromaDir, melIC):
-    """ This function extracts the spatial feature scores. For each IC it determines the fraction of the mixture modeled thresholded Z-maps respecitvely located within the CSF or at the brain edges, using predefined standardized masks.
+    """
+    This function extracts the spatial feature scores.
+    For each IC it determines the fraction of the mixture modeled thresholded Z-maps respecitvely located
+    within the CSF or at the brain edges, using predefined standardized masks.
 
     Parameters
     ---------------------------------------------------------------------------------
@@ -341,7 +361,8 @@ def feature_spatial(fslDir, tempDir, aromaDir, melIC):
     Returns
     ---------------------------------------------------------------------------------
     edgeFract:  Array of the edge fraction feature scores for the components of the melIC file
-    csfFract:   Array of the CSF fraction feature scores for the components of the melIC file"""
+    csfFract:   Array of the CSF fraction feature scores for the components of the melIC file
+    """
 
     # Import required modules
     import numpy as np
@@ -464,7 +485,8 @@ def feature_spatial(fslDir, tempDir, aromaDir, melIC):
 
 
 def classification(outDir, maxRPcorr, edgeFract, HFC, csfFract):
-    """ This function classifies a set of components into motion and 
+    """
+    This function classifies a set of components into motion and 
     non-motion components based on four features; 
     maximum RP correlation, high-frequency content, edge-fraction and CSF-fraction
 
@@ -541,7 +563,8 @@ def classification(outDir, maxRPcorr, edgeFract, HFC, csfFract):
 
 
 def denoising(fslDir, inFile, outDir, melmix, denType, denIdx):
-    """ This function classifies the ICs based on the four features; 
+    """
+    This function classifies the ICs based on the four features; 
     maximum RP correlation, high-frequency content, edge-fraction and CSF-fraction
 
     Parameters
@@ -555,7 +578,8 @@ def denoising(fslDir, inFile, outDir, melmix, denType, denIdx):
 
     Output (within the requested output directory)
     ---------------------------------------------------------------------------------
-    denoised_func_data_<denType>.nii.gz:        A nii.gz file of the denoised fMRI data"""
+    denoised_func_data_<denType>.nii.gz:        A nii.gz file of the denoised fMRI data
+    """
 
     # Import required modules
     import os
