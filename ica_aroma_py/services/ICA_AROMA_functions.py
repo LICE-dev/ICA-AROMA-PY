@@ -4,6 +4,9 @@
 
 import numpy as np
 
+# Denoising types accepted
+accepted_denTypes = {'nonaggr', 'aggr', 'both', 'no'}
+
 def runICA(fslDir, inFile, outDir, melDirIn, mask, dim, TR):
     """
     This function runs MELODIC and merges the mixture modeled thresholded ICs into a single 4D nifti file
