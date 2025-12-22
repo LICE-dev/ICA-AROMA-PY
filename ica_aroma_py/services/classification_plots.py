@@ -95,30 +95,32 @@ def classification_plot(myinput, outDir):
     # plot Freq
     sns.boxplot(x="Motion",
                 y="Freq",
+                hue="Motion",
                 data=df,
                 ax=ax2,
-                palette=[colortrue, colorfalse],
+                palette={'True': colortrue, 'False': colorfalse},
                 order=['True', 'False'])
     ax2.hlines(0.35, -1, 2, zorder=0, linestyles='dotted', linewidth=0.5)
     ax2.set_ylim([0, 1])
     ax2.set_xlabel('Classification', fontsize=14, labelpad=10)
     ax2.set_ylabel('High-Frequency Content', fontsize=14)
-    ax2.set_xticklabels(['Motion', 'Other'])
+    ax2.set_xticks([0, 1], labels=['Motion', 'Other'])
     ax2.tick_params(axis='both', labelsize=12)
     sns.despine(ax=ax2)
 
     # plot CSF
     sns.boxplot(x="Motion",
                 y="CSF",
+                hue="Motion",
                 data=df,
                 ax=ax3,
-                palette=[colortrue, colorfalse],
+                palette={'True': colortrue, 'False': colorfalse},
                 order=['True', 'False'])
     ax3.hlines(0.1, -1, 2, zorder=0, linestyles='dotted', linewidth=0.5)
     ax3.set_ylim([0, 1])
     ax3.set_xlabel('Classification', fontsize=14, labelpad=10)
     ax3.set_ylabel('CSF Fraction', fontsize=14)
-    ax3.set_xticklabels(['Motion', 'Other'])
+    ax3.set_xticks([0, 1], labels=['Motion', 'Other'])
     ax3.tick_params(axis='both', labelsize=12)
     sns.despine(ax=ax3)
 
@@ -176,22 +178,20 @@ def classification_plot(myinput, outDir):
     ax1t.set_xlim([0, 1])
 
     # Edge
-    sns.histplot(df.loc[df['Motion'] == "True", "Edge"],
+    sns.histplot(y=df.loc[df['Motion'] == "True", "Edge"],
                 ax=ax1r,
                 color=colortrue,
                 kde=True,
                 stat="density",
                 element="step",
-                alpha=0.2,
-                orientation="horizontal")
-    sns.histplot(df.loc[df['Motion'] == "False", "Edge"],
+                alpha=0.2)
+    sns.histplot(y=df.loc[df['Motion'] == "False", "Edge"],
                 ax=ax1r,
                 color=colorfalse,
                 kde=True,
                 stat="density",
                 element="step",
-                alpha=0.2,
-                orientation="horizontal")
+                alpha=0.2)
 
     ax1r.set_ylim([0, 1])
 
