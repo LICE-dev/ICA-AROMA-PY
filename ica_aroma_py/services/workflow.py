@@ -1,16 +1,15 @@
 # Import required modules
 from nipype.pipeline.engine import Node, Workflow
 from nipype.pipeline.plugins import MultiProcPlugin
-from .ICA_AROMA_nodes import GetNiftiTR, FslNVols, IsoResample, FeatureTimeSeries, FeatureFrequency, AromaClassification
-from nipype.interfaces.fsl import (
-    BET, ImageMaths, MELODIC, ExtractROI, Merge as fslMerge, ApplyMask, ApplyXFM, ApplyWarp, UnaryMaths, ImageStats
-)
+from .ICA_AROMA_nodes import (GetNiftiTR, FslNVols, IsoResample, FeatureTimeSeries, FeatureFrequency,
+                              AromaClassification, AromaClassificationPlot)
+from nipype.interfaces.fsl import (BET, ImageMaths, MELODIC, ExtractROI, Merge as fslMerge, ApplyMask, ApplyXFM,
+                                   ApplyWarp, UnaryMaths, ImageStats, Split, FilterRegressor)
 from nipype import SelectFiles, MapNode, IdentityInterface, Merge
 
 import os
 import argparse
 from pathlib import Path
-import numpy as np
 
 from . import ICA_AROMA_functions as aromafunc
 from .classification_plots import classification_plot
@@ -151,6 +150,8 @@ def run_aroma(
             mask_bet.inputs.in_file = os.path.join(inFeat, 'example_func.nii.gz')
             mask_bet.inputs.out_file = "brain.nii.gz"
             mask_bet.inputs.mask = True
+            mask_bet.inputs.robust = True
+            mask_bet.inputs.frac = 0.3
             aroma_workflow.connect(mask_bet, "mask_file", mask, "mask")
 
         else:
@@ -179,7 +180,7 @@ def run_aroma(
         # Otherwise, create specific links and
         # run mixture modeling to obtain thresholded maps.
         if os.path.isdir(os.path.join(melDirIn, 'stats')):
-            melodic = Node(IdentityInterface(fields=['out_dir'], mandatory_inputs=True), name="melodic_output")
+            melodic = Node(IdentityInterface(fields=['out_dir'], mandatory_inputs=True), name="melodic_fake")
             melodic.inputs.out_dir = melDirIn
         else:
             print(
@@ -206,8 +207,7 @@ def run_aroma(
         melodic = Node(MELODIC(), name="melodic")
         melodic.inputs.in_files = [inFile]
         melodic.inputs.mm_thresh = 0.5
-        if dim != 0:
-            melodic.inputs.dim = dim
+        melodic.inputs.dim = dim
         melodic.inputs.out_stats = True
         melodic.inputs.no_bet = True
         melodic.inputs.report = True
@@ -259,7 +259,6 @@ def run_aroma(
 
     print('Step 2) Automatic classification of the components')
     print('  - registering the spatial maps to MNI')
-    melIC_MNI = os.path.join(outDir, 'melodic_IC_thr_MNI2mm.nii.gz')
 
     # Define the MNI152 T1 2mm template
     fslnobin = fslDir.rsplit('/', 2)[0]
@@ -280,7 +279,7 @@ def run_aroma(
     elif len(warp) != 0:
         # Apply warp
         applyWarp = Node(ApplyWarp(), name="applyWarp")
-        applyWarp.inputs.reference = ref
+        applyWarp.inputs.ref_file = ref
         applyWarp.inputs.field_file = warp
         if len(affmat) != 0:
             applyWarp.inputs.premat = affmat
@@ -313,6 +312,10 @@ def run_aroma(
         raise FileNotFoundError('The specified edge mask does not exist: ' + mask_edge)
     if not os.path.isfile(mask_out):
         raise FileNotFoundError('The specified outside-brain mask does not exist: ' + mask_out)
+
+    re_split = Node(Split(), name="re_split")
+    re_split.inputs.dimension = "t"
+    aroma_workflow.connect(registeredFileNode, "registered_file", re_split, "in_file")
 
     absValue = Node(UnaryMaths(), name="absValue")
     absValue.inputs.operation = "abs"
@@ -405,20 +408,29 @@ def run_aroma(
     aroma_workflow.connect(mergeStat, ("out", calc_csf_fract), aroma_classification, "csfFract")
     aroma_workflow.connect(mergeStat, ("out", calc_edge_fract), aroma_classification, "edgeFract")
 
+    if (denType == 'nonaggr') or (denType == 'both'):
+        nonaggr_denoising = Node(FilterRegressor(), name="nonaggr_denoising")
+        nonaggr_denoising.inputs.in_file = inFile
+        nonaggr_denoising.inputs.out_file = "denoised_func_data_nonaggr.nii.gz"
+        aroma_workflow.connect(melodic_output, "mix", nonaggr_denoising, "design_file")
+        aroma_workflow.connect(aroma_classification, "motionICs", nonaggr_denoising, "filter_columns")
 
+    if (denType == 'aggr') or (denType == 'both'):
+        aggr_denoising = Node(FilterRegressor(), name="aggr_denoising")
+        aggr_denoising.inputs.in_file = inFile
+        aggr_denoising.inputs.out_file = "denoised_func_data_aggr.nii.gz"
+        aggr_denoising.inputs.args = "-a"
+        aroma_workflow.connect(melodic_output, "mix", aggr_denoising, "design_file")
+        aroma_workflow.connect(aroma_classification, "motionICs", aggr_denoising, "filter_columns")
 
-
+    if generate_plots:
+        aroma_classification_plot = Node(AromaClassificationPlot(), name="aroma_classification_plot")
+        aroma_workflow.connect(aroma_classification, "classification_overview", aroma_classification_plot, "classification_overview_file")
     """
     
     
 
-    if generate_plots:
-        classification_plot(os.path.join(outDir, 'classification_overview.txt'),
-                            outDir)
-
-        if (denType != 'no'):
-        print('Step 3) Data denoising')
-        aromafunc.denoising(fslDir, inFile, outDir, melmix, denType, motionICs)
+    
     
 
     print('\n----------------------------------- Finished -----------------------------------\n')
@@ -437,7 +449,7 @@ def run_aroma(
 
     plugin_args = {
         "mp_context": "fork",
-        "n_procs": 10,
+        "n_procs": 20,
     }
 
     aroma_workflow.config['execution'] = {'remove_unnecessary_outputs': 'False',
