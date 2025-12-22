@@ -6,18 +6,15 @@ from .ICA_AROMA_nodes import (GetNiftiTR, FslNVols, IsoResample, FeatureTimeSeri
 from nipype.interfaces.fsl import (BET, ImageMaths, MELODIC, ExtractROI, Merge as fslMerge, ApplyMask, ApplyXFM,
                                    ApplyWarp, UnaryMaths, ImageStats, Split, FilterRegressor)
 from nipype import SelectFiles, MapNode, IdentityInterface, Merge
-
 import os
 import argparse
 from pathlib import Path
 
-from . import ICA_AROMA_functions as aromafunc
-from .classification_plots import classification_plot
 
 # Denoising types accepted
 accepted_denTypes = {'nonaggr', 'aggr', 'both', 'no'}
 
-def run_aroma(
+def generate_aroma_workflow(
     outDir,
     inFile=None,
     mc=None,
@@ -30,6 +27,7 @@ def run_aroma(
     melDirIn="",
     dim=0,
     generate_plots=True,
+    aroma_workflow=None
 ):
     """
     Script to run ICA-AROMA v0.3 beta ('ICA-based Automatic Removal Of Motion Artifacts') on fMRI data.
@@ -132,7 +130,8 @@ def run_aroma(
         raise EnvironmentError('FSLDIR environment variable is not set. ICA-AROMA requires FSL.')
     fslDir = os.path.join(os.environ["FSLDIR"], 'bin', '')
 
-    aroma_workflow = Workflow(name="ica-aroma", base_dir=outDir)
+    if aroma_workflow is None:
+        aroma_workflow = Workflow(name="ica-aroma", base_dir=outDir)
 
     # Get TR of the fMRI data, if not specified
     get_tr = Node(GetNiftiTR(), name="get_fmri_tr")
@@ -411,14 +410,14 @@ def run_aroma(
     if (denType == 'nonaggr') or (denType == 'both'):
         nonaggr_denoising = Node(FilterRegressor(), name="nonaggr_denoising")
         nonaggr_denoising.inputs.in_file = inFile
-        nonaggr_denoising.inputs.out_file = "denoised_func_data_nonaggr.nii.gz"
+        #nonaggr_denoising.inputs.out_file = "denoised_func_data_nonaggr.nii.gz"
         aroma_workflow.connect(melodic_output, "mix", nonaggr_denoising, "design_file")
         aroma_workflow.connect(aroma_classification, "motionICs", nonaggr_denoising, "filter_columns")
 
     if (denType == 'aggr') or (denType == 'both'):
         aggr_denoising = Node(FilterRegressor(), name="aggr_denoising")
         aggr_denoising.inputs.in_file = inFile
-        aggr_denoising.inputs.out_file = "denoised_func_data_aggr.nii.gz"
+        #aggr_denoising.inputs.out_file = "denoised_func_data_aggr.nii.gz"
         aggr_denoising.inputs.args = "-a"
         aroma_workflow.connect(melodic_output, "mix", aggr_denoising, "design_file")
         aroma_workflow.connect(aroma_classification, "motionICs", aggr_denoising, "filter_columns")
@@ -426,26 +425,11 @@ def run_aroma(
     if generate_plots:
         aroma_classification_plot = Node(AromaClassificationPlot(), name="aroma_classification_plot")
         aroma_workflow.connect(aroma_classification, "classification_overview", aroma_classification_plot, "classification_overview_file")
-    """
-    
-    
+
+    return aroma_workflow
 
     
-    
-
-    print('\n----------------------------------- Finished -----------------------------------\n')
-
-    # Return some useful outputs
-    return {
-        "outDir": outDir,
-        "TR": TR,
-        "melodic_dir": os.path.join(outDir, 'melodic.ica'),
-        "motionICs": motionICs,
-        "denoised_nonaggr": os.path.join(outDir, 'denoised_func_data_nonaggr.nii.gz'),
-        "denoised_aggr": os.path.join(outDir, 'denoised_func_data_aggr.nii.gz'),
-    }
-
-    """
+def run_aroma_workflow(aroma_workflow):
 
     plugin_args = {
         "mp_context": "fork",
@@ -499,7 +483,7 @@ def main():
     parser = _build_arg_parser()
     args = parser.parse_args()
 
-    run_aroma(
+    aroma_workflow = generate_aroma_workflow(
         outDir=args.outDir,
         inFile=args.inFile,
         mc=args.mc,
@@ -513,6 +497,8 @@ def main():
         dim=args.dim,
         generate_plots=args.generate_plots,
     )
+
+    run_aroma_workflow(aroma_workflow)
 
 
 # allow use of module on its own
