@@ -2,9 +2,9 @@
 
 import argparse
 
-from .pipeline import run_aroma, accepted_denTypes
+from .pipeline import run_aroma, accepted_den_types
 
-#-------------------------------------------- PARSER --------------------------------------------#
+# -------------------------------------------- PARSER --------------------------------------------#
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run ICA-AROMA (direct python or nipype workflow)."
@@ -16,8 +16,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     # Required options in non-Feat mode
     nonfeat = parser.add_argument_group('Required arguments - generic mode')
-    nonfeat.add_argument('-i', '-in', dest="inFile", required=False, help='Input file name of fMRI data (.nii.gz)')
-    nonfeat.add_argument('-mc', dest="mc", required=False, help='Motion parameters file (e.g., mcflirt .par)')
+    nonfeat.add_argument('-i', '-in', dest="inFile", required=False,
+                         help='Input file name of fMRI data (.nii.gz)')
+    nonfeat.add_argument('-mc', dest="mc", required=False,
+                         help='Motion parameters file (e.g., mcflirt .par)')
     nonfeat.add_argument('-a', '-affmat', dest="affmat", default="", help='Affine registration mat file')
     nonfeat.add_argument('-w', '-warp', dest="warp", default="", help='Non-linear warp file')
     nonfeat.add_argument('-m', '-mask', dest="mask", default="", help='Mask for MELODIC')
@@ -34,9 +36,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Denoising: 'no' | 'nonaggr' (default) | 'aggr' | 'both'"
     )
     opt.add_argument('-md', '-meldir', dest="melDir", default="", help='Existing MELODIC directory')
-    opt.add_argument('-dim', dest="dim", default=0, type=int, help='MELODIC dimensionality (default 0=auto)')
-    opt.add_argument('-ow', '-overwrite', dest="overwrite", action='store_true', default=False, help='Overwrite output dir')
-    opt.add_argument('-np', '-noplots', dest="generate_plots", action='store_false', default=True, help='Disable plots')
+    opt.add_argument('-dim', dest="dim", default=0, type=int,
+                     help='MELODIC dimensionality (default 0=auto)')
+    opt.add_argument('-ow', '-overwrite', dest="overwrite", action='store_true', default=False,
+                     help='Overwrite output dir')
+    opt.add_argument('-np', '-noplots', dest="generate_plots", action='store_false',
+                     default=True, help='Disable plots')
 
     # Engine selection
     eng = parser.add_argument_group('Execution engine')
@@ -48,8 +53,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
 
     # Nipype-only options (ignored in direct mode)
-    eng.add_argument('--nprocs', type=int, default=20, help="(nipype) Number of processes")
-    eng.add_argument('--mp-context', dest='mp_context', default='fork', help="(nipype) mp_context: fork/spawn/...")
+    eng.add_argument('--nprocs', type=int, help="(nipype) Number of processes")
+    eng.add_argument('--mp-context', dest='mp_context', help="(nipype) mp_context: fork/spawn/...")
 
     return parser
 
@@ -67,9 +72,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     
     # Normalize denType
-    if args.denType not in accepted_denTypes:
+    if args.denType not in accepted_den_types:
         parser.error(
-            f"Invalid -den/denType: {args.denType}. Allowed: {sorted(accepted_denTypes)}"
+            f"Invalid -den/denType: {args.denType}. Allowed: {sorted(accepted_den_types)}"
         )
 
     # ---------- OPTIONAL DEP CHECKS (CLI UX) ----------
@@ -105,26 +110,32 @@ def main(argv=None):
         from .workflow import generate_aroma_workflow, run_aroma_workflow
 
         wf = generate_aroma_workflow(
-            outDir=args.outDir,
-            inFile=args.inFile,
+            out_dir=args.outDir,
+            in_file=args.inFile,
             mc=args.mc,
-            affmat=args.affmat,
+            aff_mat=args.affmat,
             warp=args.warp,
             mask_in=args.mask,
-            inFeat=args.inFeat,
+            in_feat=args.inFeat,
             TR=args.TR,
-            denType=args.denType,
-            melDirIn=args.melDir,
+            den_type=args.denType,
+            mel_dir_in=args.melDir,
             dim=args.dim,
             generate_plots=args.generate_plots,
+            result_dir=args.outDir
         )
+
+        plugin_args = {}
+        if args.mp_context:
+            plugin_args["mp_context"] = args.mp_context
+        if args.nprocs:
+            plugin_args["n_procs"] = args.nprocs
+
+        print(args.nprocs)
 
         run_aroma_workflow(
             wf,
-            plugin_args={
-                "mp_context": args.mp_context,
-                "n_procs": args.nprocs,
-            },
+            plugin_args=plugin_args,
         )
         return 0
 
@@ -145,7 +156,3 @@ def main(argv=None):
         generate_plots=args.generate_plots,
     )
     return 0
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())

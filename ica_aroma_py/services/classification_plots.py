@@ -1,4 +1,8 @@
-def classification_plot(myinput, outDir):
+from matplotlib.pyplot import color_sequences
+from traits.testing.optional_dependencies import requires_numpy
+
+
+def classification_plot(my_input, out_dir):
 
     import pandas as pd
     import numpy as np
@@ -10,13 +14,13 @@ def classification_plot(myinput, outDir):
     import glob
     import os
 
-    ###---Start---###
+    # ---Start--- #
     # find files
-    myfiles = glob.glob(myinput)
+    myfiles = glob.glob(my_input)
     print('Found', len(myfiles), 'file(s)')
 
     # load in data from files
-    count = 0
+    df = None
     for m in myfiles:
 
         res = []
@@ -31,18 +35,16 @@ def classification_plot(myinput, outDir):
                        float(vals[4]),
                        float(vals[5])])
 
-        if count == 0:
+        if df is None:
             df = pd.DataFrame.from_records(res)
         else:
             df2 = pd.DataFrame.from_records(res)
             df = pd.concat([df, df2], ignore_index=True)
 
-        count += 1
-
     # get counts
     ncomp = len(df)
-    nmot = len(df.loc[df[0] == "True"])
-    print('Found', nmot, 'head motion-related components in a total of', ncomp, 'components.')
+    n_mot = len(df.loc[df[0] == "True"])
+    print('Found', n_mot, 'head motion-related components in a total of', ncomp, 'components.')
 
     # add dummy components if needed, this is just for making the plots look nice
     tmp = df.loc[df[0] == "True"]
@@ -68,11 +70,11 @@ def classification_plot(myinput, outDir):
     # Make pretty figure
     # styling
     sns.set_style('white')
-    colortrue = "#FFBF17"
-    colorfalse = "#69A00A"
+    color_true = "#FFBF17"
+    color_false = "#69A00A"
 
     # create figure
-    fig = plt.figure(figsize=[12, 4])
+    fig = plt.figure(figsize=(12, 4))
 
     # define grids
     gs = gridspec.GridSpec(4, 7, wspace=1)
@@ -98,10 +100,10 @@ def classification_plot(myinput, outDir):
                 hue="Motion",
                 data=df,
                 ax=ax2,
-                palette={'True': colortrue, 'False': colorfalse},
+                palette={'True': color_true, 'False': color_false},
                 order=['True', 'False'])
     ax2.hlines(0.35, -1, 2, zorder=0, linestyles='dotted', linewidth=0.5)
-    ax2.set_ylim([0, 1])
+    ax2.set_ylim((0, 1))
     ax2.set_xlabel('Classification', fontsize=14, labelpad=10)
     ax2.set_ylabel('High-Frequency Content', fontsize=14)
     ax2.set_xticks([0, 1], labels=['Motion', 'Other'])
@@ -114,10 +116,10 @@ def classification_plot(myinput, outDir):
                 hue="Motion",
                 data=df,
                 ax=ax3,
-                palette={'True': colortrue, 'False': colorfalse},
+                palette={'True': color_true, 'False': color_false},
                 order=['True', 'False'])
     ax3.hlines(0.1, -1, 2, zorder=0, linestyles='dotted', linewidth=0.5)
-    ax3.set_ylim([0, 1])
+    ax3.set_ylim((0, 1))
     ax3.set_xlabel('Classification', fontsize=14, labelpad=10)
     ax3.set_ylabel('CSF Fraction', fontsize=14)
     ax3.set_xticks([0, 1], labels=['Motion', 'Other'])
@@ -132,27 +134,27 @@ def classification_plot(myinput, outDir):
     yy = a * xx - hyp[0] / hyp[2]
     # plot scatter and line
     if len(df) > 100:
-        sizemarker = 6
+        size_marker = 6
     else:
-        sizemarker = 10
+        size_marker = 10
     ax1.scatter(x="RP",
                 y="Edge",
                 data=df.loc[df['Motion'] == "False"],
-                color=colorfalse,
-                s=sizemarker)
+                color=color_false,
+                s=size_marker)
     # plot true ones on top to see how much the go over the border
     # this gives an indication for how many were selected using the
     # two other features
     ax1.scatter(x="RP",
                 y="Edge",
                 data=df.loc[df['Motion'] == "True"],
-                color=colortrue,
-                s=sizemarker)
+                color=color_true,
+                s=size_marker)
     # add decision boundary
     ax1.plot(xx, yy, '.', color="k", markersize=1)
     # styling
-    ax1.set_ylim([0, 1])
-    ax1.set_xlim([0, 1])
+    ax1.set_ylim((0, 1))
+    ax1.set_xlim((0, 1))
     ax1.set_xlabel('Maximum RP Correlation', fontsize=14, labelpad=10)
     ax1.set_ylabel('Edge Fraction', fontsize=14)
     ax1.set_xticks(np.arange(0, 1.2, 0.2))
@@ -163,59 +165,59 @@ def classification_plot(myinput, outDir):
     # RP
     sns.histplot(df.loc[df['Motion'] == "True", "RP"],
                 ax=ax1t,
-                color=colortrue,
+                color=color_true,
                 kde=True,
                 stat="density",
                 element="step",
                 alpha=0.2)
     sns.histplot(df.loc[df['Motion'] == "False", "RP"],
                 ax=ax1t,
-                color=colorfalse,
+                color=color_false,
                 kde=True,
                 stat="density",
                 element="step",
                 alpha=0.2)
-    ax1t.set_xlim([0, 1])
+    ax1t.set_xlim((0, 1))
 
     # Edge
     sns.histplot(y=df.loc[df['Motion'] == "True", "Edge"],
                 ax=ax1r,
-                color=colortrue,
+                color=color_true,
                 kde=True,
                 stat="density",
                 element="step",
                 alpha=0.2)
     sns.histplot(y=df.loc[df['Motion'] == "False", "Edge"],
                 ax=ax1r,
-                color=colorfalse,
+                color=color_false,
                 kde=True,
                 stat="density",
                 element="step",
                 alpha=0.2)
 
-    ax1r.set_ylim([0, 1])
+    ax1r.set_ylim((0, 1))
 
     # cosmetics
-    for myax in [ax1t, ax1r]:
-        myax.set_xticks([])
-        myax.set_yticks([])
-        myax.set_xlabel('')
-        myax.set_ylabel('')
-        myax.spines['right'].set_visible(False)
-        myax.spines['top'].set_visible(False)
-        myax.spines['bottom'].set_visible(False)
-        myax.spines['left'].set_visible(False)
+    for my_ax in [ax1t, ax1r]:
+        my_ax.set_xticks([])
+        my_ax.set_yticks([])
+        my_ax.set_xlabel('')
+        my_ax.set_ylabel('')
+        my_ax.spines['right'].set_visible(False)
+        my_ax.spines['top'].set_visible(False)
+        my_ax.spines['bottom'].set_visible(False)
+        my_ax.spines['left'].set_visible(False)
 
     # bring tickmarks back
-    for myax in fig.get_axes():
-        myax.tick_params(which="major", direction='in', length=3)
+    for my_ax in fig.get_axes():
+        my_ax.tick_params(which="major", direction='in', length=3)
 
     # add figure title
     plt.suptitle('Component Assessment', fontsize=20)
     
     # outtakes
-    os.makedirs(outDir, exist_ok=True)
-    plt.savefig(os.path.join(outDir, 'ICA_AROMA_component_assessment.pdf'),
+    os.makedirs(out_dir, exist_ok=True)
+    plt.savefig(os.path.join(out_dir, 'ICA_AROMA_component_assessment.pdf'),
                 bbox_inches='tight')
 
     return
@@ -229,25 +231,25 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="""Plot component classification overview
                                                 similar to plot in the main AROMA paper""")
     # Required options
-    reqoptions = parser.add_argument_group('Required arguments')
-    reqoptions.add_argument('-i', '-in',
-                            dest='myinput',
-                            required=True,
-                            help="""Input query or filename.
+    req_options = parser.add_argument_group('Required arguments')
+    req_options.add_argument('-i', '-in',
+                             dest='myinput',
+                             required=True,
+                             help="""Input query or filename.
                                     Use quotes when specifying a query""")
 
-    optoptions = parser.add_argument_group('Optional arguments')
-    optoptions.add_argument('-outdir',
-                            dest='outDir',
-                            required=False,
-                            default='.',
-                            help="""Specification of directory
+    opt_options = parser.add_argument_group('Optional arguments')
+    opt_options.add_argument('-outdir',
+                             dest='outDir',
+                             required=False,
+                             default='.',
+                             help="""Specification of directory
                                     where figure will be saved""")
-    optoptions.add_argument('-type',
-                            dest='plottype',
-                            required=False,
-                            default='assessment',
-                            help="""Specification of the type of plot you want.
+    opt_options.add_argument('-type',
+                             dest='plottype',
+                             required=False,
+                             default='assessment',
+                             help="""Specification of the type of plot you want.
                                     Currently this is a placeholder option for
                                     potential other plots that might be added
                                     in the future.""")

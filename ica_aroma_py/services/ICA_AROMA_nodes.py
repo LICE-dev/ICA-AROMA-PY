@@ -1,18 +1,12 @@
 # -*- DISCLAIMER: this file contains code derived from Nipype (https://github.com/nipy/nipype/blob/master/LICENSE)  -*-
-from nipype.interfaces.fsl import ApplyXFM, FLIRT
+from nipype.interfaces.fsl import FLIRT
 from nipype.interfaces.fsl.base import FSLCommand, FSLCommandInputSpec
 from nipype.interfaces.base import traits, TraitedSpec, File, isdefined, BaseInterfaceInputSpec, BaseInterface
 from nibabel import load
-import numpy as np
 import shutil
 import os
-import random
-from .ICA_AROMA_functions import cross_correlation
-import pandas as pd
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-from matplotlib import gridspec
-import seaborn as sns
+import numpy as np
+from . import ICA_AROMA_functions as AromaFunc
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.fsl.base.FSLCommandInputSpec)  -*-
 class GetNiftiTRInputSpec(FSLCommandInputSpec):
@@ -68,7 +62,7 @@ class FslNVolsInputSpec(FSLCommandInputSpec):
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.TraitedSpec)  -*-
 class FslNVolsOutputSpec(TraitedSpec):
-    nvols = traits.Int(desc="Number of EPI runs")
+    n_vols = traits.Int(desc="Number of EPI runs")
 
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.FSLCommand)  -*-
@@ -86,14 +80,14 @@ class FslNVols(FSLCommand):
         outputs = self._outputs()
 
         if isdefined(self.inputs.force_value) and self.inputs.force_value != -1:
-            outputs.nvols = self.inputs.force_value
+            outputs.n_vols = self.inputs.force_value
             return outputs
 
         info = runtime.stdout
         try:
-            outputs.nvols = int(info)
+            outputs.n_vols = int(info)
         except ValueError:
-            outputs.nvols = 0
+            outputs.n_vols = 0
 
         return outputs
 
@@ -141,13 +135,13 @@ class IsoResample(BaseInterface):
         if vox1 == self.inputs.dim and vox2 == vox1 and vox3 == vox1:
             shutil.copyfile(self.inputs.in_file, self.inputs.out_file)
         else:
-            fileResample = FLIRT()
-            fileResample.inputs.in_file = self.inputs.in_file
-            fileResample.inputs.reference = self.inputs.reference
-            fileResample.inputs.apply_isoxfm = self.inputs.dim
-            fileResample.inputs.interp = "trilinear"
-            fileResample.inputs.out_file = self.inputs.out_file
-            fileResample.run()
+            file_resample = FLIRT()
+            file_resample.inputs.in_file = self.inputs.in_file
+            file_resample.inputs.reference = self.inputs.reference
+            file_resample.inputs.apply_isoxfm = self.inputs.dim
+            file_resample.inputs.interp = "trilinear"
+            file_resample.inputs.out_file = self.inputs.out_file
+            file_resample.run()
 
         return runtime
 
@@ -164,8 +158,57 @@ class IsoResample(BaseInterface):
 
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.BaseInterfaceInputSpec)  -*-
+class FeatureSpatialInputSpec(BaseInterfaceInputSpec):
+    tot_stat = traits.List(mandatory=True, desc="Mean and number of non-zero voxels within the total Z-map")
+    csf_stat = traits.List(mandatory=True, desc="Mean and number of non-zero voxels within the csf Z-map")
+    edge_stat = traits.List(mandatory=True, desc="Mean and number of non-zero voxels within the edge Z-map")
+    out_stat = traits.List(mandatory=True, desc="Mean and number of non-zero voxels within the out Z-map")
+
+# -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.TraitedSpec)  -*-
+class FeatureSpatialOutputSpec(TraitedSpec):
+    edge_fract = traits.Array(mandatory=True,
+                              desc="Array of the edge fraction feature scores for the components of the melIC file")
+    csf_fract = traits.Array(mandatory=True,
+                             desc="Array of the csf fraction feature scores for the components of the melIC file")
+
+
+# -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.BaseInterface)  -*-
+class FeatureSpatial(BaseInterface):
+    """
+    This node extracts the spatial feature scores.
+
+    """
+
+    input_spec = FeatureSpatialInputSpec
+    output_spec = FeatureSpatialOutputSpec
+
+    def _run_interface(self, runtime):
+        self.edge_fract = np.zeros(len(self.inputs.tot_stat))
+        self.csf_fract = np.zeros(len(self.inputs.tot_stat))
+        for i in range(len(self.inputs.tot_stat)):
+            totSum = self.inputs.tot_stat[i][0] * self.inputs.tot_stat[i][1]
+            csfSum = self.inputs.csf_stat[i][0] * self.inputs.csf_stat[i][1]
+            edgeSum = self.inputs.edge_stat[i][0] * self.inputs.edge_stat[i][1]
+            outSum = self.inputs.out_stat[i][0] * self.inputs.out_stat[i][1]
+            if not (totSum == 0):
+                self.edge_fract[i] = (outSum + edgeSum) / (totSum - csfSum) if not ((totSum - csfSum) == 0) else 0
+                self.csf_fract[i] = csfSum / totSum
+            else:
+                self.edge_fract[i] = 0
+                self.csf_fract[i] = 0
+
+        return runtime
+
+    def _list_outputs(self):
+        outputs = self.output_spec().get()
+        outputs["edge_fract"] = self.edge_fract
+        outputs["csf_fract"] = self.csf_fract
+        return outputs
+
+
+# -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.BaseInterfaceInputSpec)  -*-
 class FeatureTimeSeriesInputSpec(BaseInterfaceInputSpec):
-    melmix = File(
+    mel_mix = File(
         exists=True, mandatory=True, desc="melodic_mix text file"
     )
     mc = File(
@@ -174,7 +217,8 @@ class FeatureTimeSeriesInputSpec(BaseInterfaceInputSpec):
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.TraitedSpec)  -*-
 class FeatureTimeSeriesOutputSpec(TraitedSpec):
-    maxRPcorr = traits.Array(desc="Array of the maximum RP correlation feature scores for the components of the melodic_mix file")
+    max_rp_corr = traits.Array(desc="Array of the maximum RP correlation feature scores for the components of the "
+                                    "melodic_mix file")
 
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.BaseInterface)  -*-
@@ -190,73 +234,22 @@ class FeatureTimeSeries(BaseInterface):
     output_spec = FeatureTimeSeriesOutputSpec
 
     def _run_interface(self, runtime):
-        # Read melodic mix file (IC time-series), subsequently define a set of squared time-series
-        mix = np.loadtxt(self.inputs.melmix)
-
-        # Read motion parameter file
-        rp6 = np.loadtxt(self.inputs.mc)
-        _, nparams = rp6.shape
-
-        # Determine the derivatives of the RPs (add zeros at time-point zero)
-        rp6_der = np.vstack((np.zeros(nparams),
-                             np.diff(rp6, axis=0)
-                             ))
-
-        # Create an RP-model including the RPs and its derivatives
-        rp12 = np.hstack((rp6, rp6_der))
-
-        # Add the squared RP-terms to the model
-        # add the fw and bw shifted versions
-        rp12_1fw = np.vstack((
-            np.zeros(2 * nparams),
-            rp12[:-1]
-        ))
-        rp12_1bw = np.vstack((
-            rp12[1:],
-            np.zeros(2 * nparams)
-        ))
-        rp_model = np.hstack((rp12, rp12_1fw, rp12_1bw))
-
-        # Determine the maximum correlation between RPs and IC time-series
-        nsplits = 1000
-        nmixrows, nmixcols = mix.shape
-        nrows_to_choose = int(round(0.9 * nmixrows))
-
-        # Max correlations for multiple splits of the dataset (for a robust estimate)
-        max_correls = np.empty((nsplits, nmixcols))
-        for i in range(nsplits):
-            # Select a random subset of 90% of the dataset rows (*without* replacement)
-            chosen_rows = random.sample(population=range(nmixrows),
-                                        k=nrows_to_choose)
-
-            # Combined correlations between RP and IC time-series, squared and non squared
-            correl_nonsquared = cross_correlation(mix[chosen_rows],
-                                                  rp_model[chosen_rows])
-            correl_squared = cross_correlation(mix[chosen_rows] ** 2,
-                                               rp_model[chosen_rows] ** 2)
-            correl_both = np.hstack((correl_squared, correl_nonsquared))
-
-            # Maximum absolute temporal correlation for every IC
-            max_correls[i] = np.abs(correl_both).max(axis=1)
-
-        # Feature score is the mean of the maximum correlation over all the random splits
-        # Avoid propagating occasional nans that arise in artificial test cases
-        self.maxRPcorr = np.nanmean(max_correls, axis=0)
-
+        self.max_rp_corr = AromaFunc.feature_time_series(self.inputs.mel_mix, self.inputs.mc)
         return runtime
 
     def _list_outputs(self):
         outputs = self.output_spec().get()
-        outputs["maxRPcorr"] = self.maxRPcorr
+        outputs["max_rp_corr"] = self.max_rp_corr
         return outputs
 
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.BaseInterfaceInputSpec)  -*-
 class FeatureFrequencyInputSpec(BaseInterfaceInputSpec):
-    melFTmix = File(
+    mel_ft_mix = File(
         exists=True, mandatory=True, desc="melodic_mix text file"
     )
     TR = traits.Float(desc="Repetition Time")
+
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.TraitedSpec)  -*-
 class FeatureFrequencyOutputSpec(TraitedSpec):
@@ -277,35 +270,7 @@ class FeatureFrequency(BaseInterface):
     output_spec = FeatureFrequencyOutputSpec
 
     def _run_interface(self, runtime):
-        # Determine sample frequency
-        Fs = 1.0 / self.inputs.TR
-
-        # Determine Nyquist-frequency
-        Ny = Fs / 2.0
-
-        # Load melodic_FTmix file
-        FT = np.loadtxt(self.inputs.melFTmix)
-
-        # Determine which frequencies are associated with every row in the melodic_FTmix file  (assuming the rows range from 0Hz to Nyquist)
-        f = Ny * (np.array(list(range(1, FT.shape[0] + 1)))) / (FT.shape[0])
-
-        # Only include frequencies higher than 0.01Hz
-        fincl = np.squeeze(np.array(np.where(f > 0.01)))
-        FT = FT[fincl, :]
-        f = f[fincl]
-
-        # Set frequency range to [0-1]
-        f_norm = (f - 0.01) / (Ny - 0.01)
-
-        # For every IC; get the cumulative sum as a fraction of the total sum
-        fcumsum_fract = np.cumsum(FT, axis=0) / np.sum(FT, axis=0)
-
-        # Determine the index of the frequency with the fractional cumulative sum closest to 0.5
-        idx_cutoff = np.argmin(np.abs(fcumsum_fract - 0.5), axis=0)
-
-        # Now get the fractions associated with those indices index, these are the final feature scores
-        self.HFC = f_norm[idx_cutoff]
-
+        self.HFC = AromaFunc.feature_frequency(self.inputs.mel_ft_mix, self.inputs.TR)
         return runtime
 
     def _list_outputs(self):
@@ -313,24 +278,27 @@ class FeatureFrequency(BaseInterface):
         outputs["HFC"] = self.HFC
         return outputs
 
+
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.BaseInterfaceInputSpec)  -*-
 class AromaClassificationInputSpec(BaseInterfaceInputSpec):
-    maxRPcorr = traits.Array(mandatory=True,
-                             desc="Array of the maximum RP correlation feature scores for the components of the melodic_mix file")
+    max_rp_corr = traits.Array(mandatory=True,
+                               desc="Array of the maximum RP correlation feature scores for the components of the "
+                                    "melodic_mix file")
     HFC = traits.Array(mandatory=True, desc="Array of the HFC ('High-frequency content') feature scores")
-    edgeFract = traits.Array(mandatory=True,
-                             desc="Array of the edge fraction feature scores for the components of the melIC file")
-    csfFract = traits.Array(mandatory=True,
-                            desc="Array of the csf fraction feature scores for the components of the melIC file")
+    edge_fract = traits.Array(mandatory=True,
+                              desc="Array of the edge fraction feature scores for the components of the melIC file")
+    csf_fract = traits.Array(mandatory=True,
+                             desc="Array of the csf fraction feature scores for the components of the melIC file")
     feature_scores = File(desc="Feature score file")
-    classified_motion_ICs = File(desc="Motion IC file")
+    classified_motion_ics = File(desc="Motion IC file")
     classification_overview = File(desc="Overview file")
+
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.TraitedSpec)  -*-
 class AromaClassificationOutputSpec(TraitedSpec):
-    motionICs = traits.List(desc="Array of the HFC ('High-frequency content') feature scores")
+    motion_ics = traits.List(desc="Array of the HFC ('High-frequency content') feature scores")
     feature_scores = File(desc="Feature score file")
-    classified_motion_ICs = File(desc="Motion IC file")
+    classified_motion_ics = File(desc="Motion IC file")
     classification_overview = File(desc="Overview file")
 
 
@@ -348,83 +316,35 @@ class AromaClassification(BaseInterface):
     output_spec = AromaClassificationOutputSpec
 
     def _run_interface(self, runtime):
-
         self.inputs.feature_scores = os.path.abspath("feature_scores.txt")
-        self.inputs.classified_motion_ICs = os.path.abspath("classified_motion_ICs.txt")
+        self.inputs.classified_motion_ics = os.path.abspath("classified_motion_ICs.txt")
         self.inputs.classification_overview = os.path.abspath("classification_overview.txt")
-
-        # Define criteria needed for classification (thresholds and hyperplane-parameters)
-        thr_csf = 0.10
-        thr_HFC = 0.35
-        hyp = np.array([-19.9751070082159, 9.95127547670627, 24.8333160239175])
-
-        # Project edge & maxRPcorr feature scores to new 1D space
-        x = np.array([self.inputs.maxRPcorr, self.inputs.edgeFract])
-        proj = hyp[0] + np.dot(x.T, hyp[1:])
-
-        # Classify the ICs
-        motionICs = np.squeeze(np.array(np.where((proj > 0) + (self.inputs.csfFract > thr_csf) + (self.inputs.HFC > thr_HFC))))
-
-        # Put the feature scores in a text file
-        np.savetxt(self.inputs.feature_scores,
-                   np.vstack((self.inputs.maxRPcorr, self.inputs.edgeFract, self.inputs.HFC, self.inputs.csfFract)).T)
-
-        # Put the indices of motion-classified ICs in a text file
-        txt = open(self.inputs.classified_motion_ICs, 'w')
-        if motionICs.size > 1:  # and len(motionICs) != 0: if motionICs is not None and
-            txt.write(','.join(['{:.0f}'.format(num) for num in (motionICs + 1)]))
-        elif motionICs.size == 1:
-            txt.write('{:.0f}'.format(motionICs + 1))
-        txt.close()
-
-        # Create a summary overview of the classification
-        txt = open(self.inputs.classification_overview, 'w')
-        txt.write('\t'.join(['IC',
-                             'Motion/noise',
-                             'maximum RP correlation',
-                             'Edge-fraction',
-                             'High-frequency content',
-                             'CSF-fraction']))
-        txt.write('\n')
-        for i in range(0, len(self.inputs.csfFract)):
-            if (proj[i] > 0) or (self.inputs.csfFract[i] > thr_csf) or (self.inputs.HFC[i] > thr_HFC):
-                classif = "True"
-            else:
-                classif = "False"
-            txt.write('\t'.join(['{:d}'.format(i + 1),
-                                 classif,
-                                 '{:.2f}'.format(self.inputs.maxRPcorr[i]),
-                                 '{:.2f}'.format(self.inputs.edgeFract[i]),
-                                 '{:.2f}'.format(self.inputs.HFC[i]),
-                                 '{:.2f}'.format(self.inputs.csfFract[i])]))
-            txt.write('\n')
-        txt.close()
-
-        self.motionICs = motionICs.tolist()
-
+        motion_ics = AromaFunc.classification(os.path.abspath("."),
+                                                   self.inputs.max_rp_corr,
+                                                   self.inputs.edge_fract,
+                                                   self.inputs.HFC,
+                                                   self.inputs.csf_fract)
+        self.motion_ics = (motion_ics + 1).tolist()
         return runtime
 
     def _list_outputs(self):
         outputs = self.output_spec().get()
-        outputs["motionICs"] = self.motionICs
+        outputs["motion_ics"] = self.motion_ics
         outputs["feature_scores"] = os.path.abspath("feature_scores.txt")
-        outputs["classified_motion_ICs"] = os.path.abspath("classified_motion_ICs.txt")
+        outputs["classified_motion_ics"] = os.path.abspath("classified_motion_ICs.txt")
         outputs["classification_overview"] = os.path.abspath("classification_overview.txt")
         return outputs
-
-
-
-
 
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.BaseInterfaceInputSpec)  -*-
 class AromaClassificationPlotInputSpec(BaseInterfaceInputSpec):
     classification_overview_file = File(exists=True, mandatory=True, desc="Classification overview file")
-    out_file = File(desc="The component assessement file")
+    out_file = File(desc="The component assessment file")
+
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.TraitedSpec)  -*-
 class AromaClassificationPlotOutputSpec(TraitedSpec):
-    out_file = File(desc="The component assessement file")
+    out_file = File(desc="The component assessment file")
 
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.BaseInterface)  -*-
@@ -441,217 +361,9 @@ class AromaClassificationPlot(BaseInterface):
     output_spec = AromaClassificationPlotOutputSpec
 
     def _run_interface(self, runtime):
-
+        from .classification_plots import classification_plot
         self.inputs.out_file = os.path.abspath("ICA_AROMA_component_assessment.pdf")
-
-        ###---Start---###
-        # find files
-        myfiles = [self.inputs.classification_overview_file]
-        print('Found', len(myfiles), 'file(s)')
-
-        mpl.use('Agg')
-
-        # load in data from files
-        count = 0
-        for m in myfiles:
-
-            res = []
-
-            tmp = open(m, 'r').read().split('\n')
-
-            for t in tmp[1:-1]:
-                vals = t.split('\t')
-                res.append([vals[1],
-                            float(vals[2]),
-                            float(vals[3]),
-                            float(vals[4]),
-                            float(vals[5])])
-
-            if count == 0:
-                df = pd.DataFrame.from_records(res)
-            else:
-                df2 = pd.DataFrame.from_records(res)
-                df = pd.concat([df, df2], ignore_index=True)
-
-            count += 1
-
-        # get counts
-        ncomp = len(df)
-        nmot = len(df.loc[df[0] == "True"])
-        print('Found', nmot, 'head motion-related components in a total of', ncomp, 'components.')
-
-        # add dummy components if needed, this is just for making the plots look nice
-        tmp = df.loc[df[0] == "True"]
-        if len(tmp) < 3:
-            df3 = pd.DataFrame.from_records([["True", 1., 1., 0., 0.],
-                                             ["True", 1., 1., 0., 0.],
-                                             ["True", 1., 1., 0., 0.]])
-            df = pd.concat([df, df3], ignore_index=True)
-        tmp = df.loc[df[0] == "False"]
-        if len(tmp) < 3:
-            df3 = pd.DataFrame.from_records([["False", 0., 0., 0., 0.],
-                                             ["False", 0., 0., 0., 0.],
-                                             ["False", 0., 0., 0., 0.]])
-            df = pd.concat([df, df3], ignore_index=True)
-
-        # rename columns
-        df = df.rename(index=str, columns={0: 'Motion',
-                                           1: 'RP',
-                                           2: 'Edge',
-                                           3: 'Freq',
-                                           4: 'CSF'})
-
-        # Make pretty figure
-        # styling
-        sns.set_style('white')
-        colortrue = "#FFBF17"
-        colorfalse = "#69A00A"
-
-        # create figure
-        fig = plt.figure(figsize=[12, 4])
-
-        # define grids
-        gs = gridspec.GridSpec(4, 7, wspace=1)
-        gs00 = gridspec.GridSpecFromSubplotSpec(4, 4, subplot_spec=gs[:, 0:3])
-        gs01 = gridspec.GridSpecFromSubplotSpec(4, 1, subplot_spec=gs[:, 3:5])
-        gs02 = gridspec.GridSpecFromSubplotSpec(4, 1, subplot_spec=gs[:, 5:7])
-
-        # define subplots
-        # Edge/RP
-        ax1 = fig.add_subplot(gs00[1:4, 0:3])
-        # distribution edge (ax1 top)
-        ax1t = fig.add_subplot(gs00[0, 0:3])
-        # distribution RP (ax1 right)
-        ax1r = fig.add_subplot(gs00[1:4, 3])
-        # Freq
-        ax2 = fig.add_subplot(gs01[1:4, :])
-        # CSF
-        ax3 = fig.add_subplot(gs02[1:4, :])
-
-        # plot Freq
-        sns.boxplot(x="Motion",
-                    y="Freq",
-                    hue="Motion",
-                    data=df,
-                    ax=ax2,
-                    palette={'True': colortrue, 'False': colorfalse},
-                    order=['True', 'False'])
-        ax2.hlines(0.35, -1, 2, zorder=0, linestyles='dotted', linewidth=0.5)
-        ax2.set_ylim([0, 1])
-        ax2.set_xlabel('Classification', fontsize=14, labelpad=10)
-        ax2.set_ylabel('High-Frequency Content', fontsize=14)
-        ax2.set_xticks([0, 1], labels=['Motion', 'Other'])
-        ax2.tick_params(axis='both', labelsize=12)
-        sns.despine(ax=ax2)
-
-        # plot CSF
-        sns.boxplot(x="Motion",
-                    y="CSF",
-                    hue="Motion",
-                    data=df,
-                    ax=ax3,
-                    palette={'True': colortrue, 'False': colorfalse},
-                    order=['True', 'False'])
-        ax3.hlines(0.1, -1, 2, zorder=0, linestyles='dotted', linewidth=0.5)
-        ax3.set_ylim([0, 1])
-        ax3.set_xlabel('Classification', fontsize=14, labelpad=10)
-        ax3.set_ylabel('CSF Fraction', fontsize=14)
-        ax3.set_xticks([0, 1], labels=['Motion', 'Other'])
-        ax3.tick_params(axis='both', labelsize=12)
-        sns.despine(ax=ax3)
-
-        # plot Edge/RP relationship
-        # obtain projection line
-        hyp = np.array([-19.9751070082159, 9.95127547670627, 24.8333160239175])
-        a = -hyp[1] / hyp[2]
-        xx = np.linspace(0, 1)
-        yy = a * xx - hyp[0] / hyp[2]
-        # plot scatter and line
-        if len(df) > 100:
-            sizemarker = 6
-        else:
-            sizemarker = 10
-        ax1.scatter(x="RP",
-                    y="Edge",
-                    data=df.loc[df['Motion'] == "False"],
-                    color=colorfalse,
-                    s=sizemarker)
-        # plot true ones on top to see how much the go over the border
-        # this gives an indication for how many were selected using the
-        # two other features
-        ax1.scatter(x="RP",
-                    y="Edge",
-                    data=df.loc[df['Motion'] == "True"],
-                    color=colortrue,
-                    s=sizemarker)
-        # add decision boundary
-        ax1.plot(xx, yy, '.', color="k", markersize=1)
-        # styling
-        ax1.set_ylim([0, 1])
-        ax1.set_xlim([0, 1])
-        ax1.set_xlabel('Maximum RP Correlation', fontsize=14, labelpad=10)
-        ax1.set_ylabel('Edge Fraction', fontsize=14)
-        ax1.set_xticks(np.arange(0, 1.2, 0.2))
-        ax1.set_yticks(np.arange(0, 1.2, 0.2))
-        ax1.tick_params(axis='both', labelsize=12)
-
-        # plot distributions
-        # RP
-        sns.histplot(df.loc[df['Motion'] == "True", "RP"],
-                     ax=ax1t,
-                     color=colortrue,
-                     kde=True,
-                     stat="density",
-                     element="step",
-                     alpha=0.2)
-        sns.histplot(df.loc[df['Motion'] == "False", "RP"],
-                     ax=ax1t,
-                     color=colorfalse,
-                     kde=True,
-                     stat="density",
-                     element="step",
-                     alpha=0.2)
-        ax1t.set_xlim([0, 1])
-
-        # Edge
-        sns.histplot(y=df.loc[df['Motion'] == "True", "Edge"],
-                     ax=ax1r,
-                     color=colortrue,
-                     kde=True,
-                     stat="density",
-                     element="step",
-                     alpha=0.2)
-        sns.histplot(y=df.loc[df['Motion'] == "False", "Edge"],
-                     ax=ax1r,
-                     color=colorfalse,
-                     kde=True,
-                     stat="density",
-                     element="step",
-                     alpha=0.2)
-
-        ax1r.set_ylim([0, 1])
-
-        # cosmetics
-        for myax in [ax1t, ax1r]:
-            myax.set_xticks([])
-            myax.set_yticks([])
-            myax.set_xlabel('')
-            myax.set_ylabel('')
-            myax.spines['right'].set_visible(False)
-            myax.spines['top'].set_visible(False)
-            myax.spines['bottom'].set_visible(False)
-            myax.spines['left'].set_visible(False)
-
-        # bring tickmarks back
-        for myax in fig.get_axes():
-            myax.tick_params(which="major", direction='in', length=3)
-
-        # add figure title
-        plt.suptitle('Component Assessment', fontsize=20)
-
-        # outtakes
-        plt.savefig(self.inputs.out_file, bbox_inches='tight')
-
+        classification_plot(self.inputs.classification_overview_file, os.path.abspath("."))
         return runtime
 
     def _list_outputs(self):

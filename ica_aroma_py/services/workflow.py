@@ -2,30 +2,29 @@
 from nipype.pipeline.engine import Node, Workflow
 from nipype.pipeline.plugins import MultiProcPlugin
 from .ICA_AROMA_nodes import (GetNiftiTR, FslNVols, IsoResample, FeatureTimeSeries, FeatureFrequency,
-                              AromaClassification, AromaClassificationPlot)
+                              AromaClassification, AromaClassificationPlot, FeatureSpatial)
 from nipype.interfaces.fsl import (BET, ImageMaths, MELODIC, ExtractROI, Merge as fslMerge, ApplyMask, ApplyXFM,
                                    ApplyWarp, UnaryMaths, ImageStats, Split, FilterRegressor)
-from nipype import SelectFiles, MapNode, IdentityInterface, Merge
+from nipype import SelectFiles, MapNode, IdentityInterface, DataSink
 import os
 from pathlib import Path
-
-from . import ICA_AROMA_functions as aromafunc
-
+from .ICA_AROMA_functions import accepted_den_types
 
 def generate_aroma_workflow(
-    outDir,
-    inFile=None,
+    out_dir,
+    in_file=None,
     mc=None,
-    affmat="",
+    aff_mat="",
     warp="",
     mask_in="",
-    inFeat=None,
+    in_feat=None,
     TR=None,
-    denType="nonaggr",
-    melDirIn="",
+    den_type="nonaggr",
+    mel_dir_in="",
     dim=0,
     generate_plots=True,
-    aroma_workflow=None
+    aroma_workflow=None,
+    result_dir=None,
 ):
     """
     Script to run ICA-AROMA v0.3 beta ('ICA-based Automatic Removal Of Motion Artifacts') on fMRI data.
@@ -37,31 +36,30 @@ def generate_aroma_workflow(
     """
 
     print('\n------------------------------- RUNNING ICA-AROMA ------------------------------- ')
-    print('--------------- \'ICA-based Automatic Removal Of Motion Artifacts\' --------------- \n')
 
     # Define variables based on the type of input (i.e. Feat directory or specific input arguments),
     # and check whether the specified files exist.
     cancel = False
 
-    if inFeat:
+    if in_feat:
         # Check whether the Feat directory exists
-        if not os.path.isdir(inFeat):
+        if not os.path.isdir(in_feat):
             raise FileNotFoundError('The specified Feat directory does not exist.')
 
         # Define the variables which should be located in the Feat directory
-        inFile = os.path.join(inFeat, 'filtered_func_data.nii.gz')
-        mc = os.path.join(inFeat, 'mc', 'prefiltered_func_data_mcf.par')
-        affmat = os.path.join(inFeat, 'reg', 'example_func2highres.mat')
-        warp = os.path.join(inFeat, 'reg', 'highres2standard_warp.nii.gz')
+        in_file = os.path.join(in_feat, 'filtered_func_data.nii.gz')
+        mc = os.path.join(in_feat, 'mc', 'prefiltered_func_data_mcf.par')
+        aff_mat = os.path.join(in_feat, 'reg', 'example_func2highres.mat')
+        warp = os.path.join(in_feat, 'reg', 'highres2standard_warp.nii.gz')
 
         # Check whether these files actually exist
-        if not os.path.isfile(inFile):
+        if not os.path.isfile(in_file):
             print('Missing filtered_func_data.nii.gz in Feat directory.')
             cancel = True
         if not os.path.isfile(mc):
             print('Missing mc/prefiltered_func_data_mcf.mat in Feat directory.')
             cancel = True
-        if not os.path.isfile(affmat):
+        if not os.path.isfile(aff_mat):
             print('Missing reg/example_func2highres.mat in Feat directory.')
             cancel = True
         if not os.path.isfile(warp):
@@ -69,16 +67,16 @@ def generate_aroma_workflow(
             cancel = True
 
         # Check whether a melodic.ica directory exists
-        if os.path.isdir(os.path.join(inFeat, 'filtered_func_data.ica')):
-            melDirIn = os.path.join(inFeat, 'filtered_func_data.ica')
+        if os.path.isdir(os.path.join(in_feat, 'filtered_func_data.ica')):
+            mel_dir_in = os.path.join(in_feat, 'filtered_func_data.ica')
 
     else:
         # Generic mode: inFile and mc are required
-        if not inFile:
+        if not in_file:
             print('No input file specified.')
             cancel = True
         else:
-            if not os.path.isfile(inFile):
+            if not os.path.isfile(in_file):
                 print('The specified input file does not exist.')
                 cancel = True
 
@@ -90,8 +88,8 @@ def generate_aroma_workflow(
                 print('The specified mc file does does not exist.')
                 cancel = True
 
-        if affmat:
-            if not os.path.isfile(affmat):
+        if aff_mat:
+            if not os.path.isfile(aff_mat):
                 print('The specified affmat file does not exist.')
                 cancel = True
 
@@ -101,7 +99,7 @@ def generate_aroma_workflow(
                 cancel = True
 
     # Parse the arguments which do not depend on whether a Feat directory has been specified
-    outDir = str(outDir)
+    out_dir = str(out_dir)
     dim = int(dim)
 
     # Check if the mask exists, when specified.
@@ -111,29 +109,33 @@ def generate_aroma_workflow(
             cancel = True
 
     # Check if the type of denoising is correctly specified, when specified
-    if denType not in aromafunc.accepted_denTypes:
+    if den_type not in accepted_den_types:
         print('Type of denoising was not correctly specified. Non-aggressive denoising will be run.')
-        denType = 'nonaggr'
+        den_type = 'nonaggr'
 
     # If the criteria for file/directory specifications have not been met. Cancel ICA-AROMA.
     if cancel:
         print('\n----------------------------- ICA-AROMA IS CANCELED -----------------------------\n')
         raise RuntimeError('ICA-AROMA was canceled due to invalid input(s).')
 
-    #------------------------------------------- PREPARE -------------------------------------------#
-
+    # ------------------------------------------- PREPARE -------------------------------------------#
 
     # Define the FSL-bin directory
     if "FSLDIR" not in os.environ:
         raise EnvironmentError('FSLDIR environment variable is not set. ICA-AROMA requires FSL.')
-    fslDir = os.path.join(os.environ["FSLDIR"], 'bin', '')
+    fsl_dir = os.path.join(os.environ["FSLDIR"], 'bin', '')
 
     if aroma_workflow is None:
-        aroma_workflow = Workflow(name="ica-aroma", base_dir=outDir)
+        aroma_workflow = Workflow(name="ica_aroma_execution", base_dir=out_dir)
 
-    # Get TR of the fMRI data, if not specified
+    aroma_datasink = None
+    if result_dir is not None:
+        aroma_datasink = Node(DataSink(), name="aroma_datasink")
+        aroma_datasink.inputs.base_directory = result_dir
+
+        # Get TR of the fMRI data, if not specified
     get_tr = Node(GetNiftiTR(), name="get_fmri_tr")
-    get_tr.inputs.in_file = inFile
+    get_tr.inputs.in_file = in_file
     if TR is not None:
         get_tr.inputs.force_tr = TR
 
@@ -142,9 +144,9 @@ def generate_aroma_workflow(
     if mask_in:
         mask.inputs.mask = mask_in
     else:
-        if inFeat and os.path.isfile(os.path.join(inFeat, 'example_func.nii.gz')):
+        if in_feat and os.path.isfile(os.path.join(in_feat, 'example_func.nii.gz')):
             mask_bet = Node(BET(), name="create_mask_bet")
-            mask_bet.inputs.in_file = os.path.join(inFeat, 'example_func.nii.gz')
+            mask_bet.inputs.in_file = os.path.join(in_feat, 'example_func.nii.gz')
             mask_bet.inputs.out_file = "brain.nii.gz"
             mask_bet.inputs.mask = True
             mask_bet.inputs.robust = True
@@ -153,22 +155,22 @@ def generate_aroma_workflow(
 
         else:
             mask_maths = Node(ImageMaths(), name="create_mask_maths")
-            mask_maths.inputs.in_file = inFile
+            mask_maths.inputs.in_file = in_file
             mask_maths.inputs.op_string = '-Tstd -bin'
             mask_maths.inputs.out_file = "brain_mask.nii.gz"
             aroma_workflow.connect(mask_maths, "out_file", mask, "mask")
 
+    # ---------------------------------------- Run ICA-AROMA ---------------------------------------- #
 
-    #---------------------------------------- Run ICA-AROMA ----------------------------------------#
+    mel_ic = os.path.join(mel_dir_in, 'melodic_IC.nii.gz')
+    mel_ic_mix = os.path.join(mel_dir_in, 'melodic_mix')
 
-    melIC = os.path.join(melDirIn, 'melodic_IC.nii.gz')
-    melICmix = os.path.join(melDirIn, 'melodic_mix')
-
-    print('Step 1) MELODIC')
     # When a MELODIC directory is specified,
     # check whether all needed files are present.
     # Otherwise... run MELODIC again
-    if len(melDirIn) != 0 and os.path.isfile(melIC) and os.path.isfile(os.path.join(melDirIn, 'melodic_FTmix')) and os.path.isfile(melICmix):
+    if (len(mel_dir_in) != 0 and os.path.isfile(mel_ic)
+            and os.path.isfile(os.path.join(mel_dir_in, 'melodic_FTmix'))
+            and os.path.isfile(mel_ic_mix)):
 
         print('  - The existing/specified MELODIC directory will be used.')
 
@@ -176,33 +178,34 @@ def generate_aroma_workflow(
         # create a symbolic link to the MELODIC directory.
         # Otherwise, create specific links and
         # run mixture modeling to obtain thresholded maps.
-        if os.path.isdir(os.path.join(melDirIn, 'stats')):
+        if os.path.isdir(os.path.join(mel_dir_in, 'stats')):
             melodic = Node(IdentityInterface(fields=['out_dir'], mandatory_inputs=True), name="melodic_fake")
-            melodic.inputs.out_dir = melDirIn
+            melodic.inputs.out_dir = mel_dir_in
         else:
-            print(
-                '  - The MELODIC directory does not contain the required \'stats\' folder. Mixture modeling on the Z-statistical maps will be run.')
+            print('  - The MELODIC directory does not contain the required \'stats\' folder. Mixture modeling on '
+                  'the Z-statistical maps will be run.')
             # Run mixture modeling
             # TODO: check if we need to specify to run mixture modeling in original melodic dir
             melodic = Node(MELODIC(), name="melodic")
-            melodic.inputs.in_files = [melIC]
-            melodic.inputs.ICs = melIC
-            melodic.inputs.mix = melICmix
+            melodic.inputs.in_files = [mel_ic]
+            melodic.inputs.ICs = mel_ic
+            melodic.inputs.mix = mel_ic_mix
             melodic.inputs.mm_thresh = 0.5
             melodic.inputs.out_stats = True
     else:
         # If a melodic directory was specified,
         # display that it did not contain all files needed for ICA-AROMA (or that the directory does not exist at all)
-        if len(melDirIn) != 0:
-            if not os.path.isdir(melDirIn):
+        if len(mel_dir_in) != 0:
+            if not os.path.isdir(mel_dir_in):
                 print('  - The specified MELODIC directory does not exist. MELODIC will be run seperately.')
             else:
                 print(
-                    '  - The specified MELODIC directory does not contain the required files to run ICA-AROMA. MELODIC will be run seperately.')
+                    '  - The specified MELODIC directory does not contain the required files to run ICA-AROMA. '
+                    'MELODIC will be run seperately.')
 
         # Run MELODIC
         melodic = Node(MELODIC(), name="melodic")
-        melodic.inputs.in_files = [inFile]
+        melodic.inputs.in_files = [in_file]
         melodic.inputs.mm_thresh = 0.5
         melodic.inputs.dim = dim
         melodic.inputs.out_stats = True
@@ -213,8 +216,8 @@ def generate_aroma_workflow(
 
     # Select useful Melodic output files
     templates = dict(IC="melodic_IC.nii.gz",
-                     mix="melodic_mix",
-                     melFTmix="melodic_FTmix",
+                     mel_mix="melodic_mix",
+                     mel_ft_mix="melodic_FTmix",
                      thresh_zstat_files="stats/thresh_zstat*.nii.gz")
 
     melodic_output = Node(SelectFiles(templates), name="melodic_output")
@@ -222,55 +225,52 @@ def generate_aroma_workflow(
     aroma_workflow.connect(melodic, "out_dir", melodic_output, "melodic_dir")
     aroma_workflow.connect(melodic, "out_dir", melodic_output, "base_directory")
 
-    getICn = Node(FslNVols(), name="getICn")
-    aroma_workflow.connect(melodic_output, "IC", getICn, "in_file")
+    get_ic_n = Node(FslNVols(), name="get_ic_n")
+    aroma_workflow.connect(melodic_output, "IC", get_ic_n, "in_file")
 
     # Merge mixture modeled thresholded spatial maps.
     # Note! In case that mixture modeling did not converge, the file will contain two spatial maps.
     # The latter being the results from a simple null hypothesis test.
-    # In that case, this map will have to be used (first one will be empty).
-    getZstatn = MapNode(FslNVols(),
-                        name="getZstatn",
+    # In that case, this map will have to be used (the first one will be empty).
+    get_zstat_n = MapNode(FslNVols(),
+                        name="get_zstat_n",
                         iterfield=["in_file"])
-    aroma_workflow.connect(melodic_output, "thresh_zstat_files", getZstatn, "in_file")
+    aroma_workflow.connect(melodic_output, "thresh_zstat_files", get_zstat_n, "in_file")
 
     def reduce_n_by_1(voln_list):
         return [*map(lambda x: x - 1, voln_list)]
 
-    lastZstat = MapNode(ExtractROI(),
-                        name="lastZstat",
-                        iterfield=["in_file", "t_min"],
-                        #synchronize=True
-                        )
-    lastZstat.inputs.t_size = 1
-    aroma_workflow.connect(melodic_output, "thresh_zstat_files", lastZstat, "in_file")
-    aroma_workflow.connect(getZstatn, ("nvols", reduce_n_by_1), lastZstat, "t_min")
+    last_zstat = MapNode(ExtractROI(),
+                         name="last_zstat",
+                         iterfield=["in_file", "t_min"])
+    last_zstat.inputs.t_size = 1
+    aroma_workflow.connect(melodic_output, "thresh_zstat_files", last_zstat, "in_file")
+    aroma_workflow.connect(get_zstat_n, ("n_vols", reduce_n_by_1), last_zstat, "t_min")
 
-    mergeZstat = Node(fslMerge(), name="mergeZstat")
-    mergeZstat.inputs.dimension = 't'
-    aroma_workflow.connect(lastZstat, "roi_file", mergeZstat, "in_files")
+    merge_zstat = Node(fslMerge(), name="merge_zstat")
+    merge_zstat.inputs.dimension = 't'
+    aroma_workflow.connect(last_zstat, "roi_file", merge_zstat, "in_files")
 
-    maskZstat = Node(ApplyMask(), name="maskZstat")
-    aroma_workflow.connect(mergeZstat, "merged_file", maskZstat, "in_file")
-    aroma_workflow.connect(mask, "mask", maskZstat, "mask_file")
-
-    print('Step 2) Automatic classification of the components')
-    print('  - registering the spatial maps to MNI')
+    mask_zstat = Node(ApplyMask(), name="mask_zstat")
+    aroma_workflow.connect(merge_zstat, "merged_file", mask_zstat, "in_file")
+    aroma_workflow.connect(mask, "mask", mask_zstat, "mask_file")
 
     # Define the MNI152 T1 2mm template
-    fslnobin = fslDir.rsplit('/', 2)[0]
-    ref = os.path.join(fslnobin, 'data', 'standard', 'MNI152_T1_2mm_brain.nii.gz')
+    fsl_no_bin = fsl_dir.rsplit('/', 2)[0]
+    ref = os.path.join(fsl_no_bin, 'data', 'standard', 'MNI152_T1_2mm_brain.nii.gz')
 
-    registeredFileNode = Node(IdentityInterface(fields=['registered_file'], mandatory_inputs=True), name="registeredFileNode")
+    registered_file_node = Node(IdentityInterface(fields=['registered_file'], mandatory_inputs=True),
+                              name="registered_file_node")
 
-    # If the no affmat- or warp-file has been specified, assume that the data is already in MNI152 space.
+    # If the no affmat-file or warp-file has been specified, assume that the data is already in MNI152 space.
     # In that case, only check if resampling to 2mm is needed
-    if (len(affmat) == 0) and (len(warp) == 0):
-        fileResample = Node(IsoResample(), name="fileResample")
-        fileResample.inputs.reference = ref
-        fileResample.inputs.dim = 2
-        aroma_workflow.connect(maskZstat, "out_file", fileResample, "in_file")
-        aroma_workflow.connect(fileResample, "out_file", registeredFileNode, "registered_file")
+    if (len(aff_mat) == 0) and (len(warp) == 0):
+        file_resample = Node(IsoResample(), name="file_resample")
+        file_resample.inputs.reference = ref
+        file_resample.inputs.dim = 2
+        file_resample.inputs.out_file = "melodic_IC_thr_MNI2mm.nii.gz"
+        aroma_workflow.connect(mask_zstat, "out_file", file_resample, "in_file")
+        aroma_workflow.connect(file_resample, "out_file", registered_file_node, "registered_file")
 
     # If a warp-file has been specified, apply it and an eventual affmat provided
     elif len(warp) != 0:
@@ -278,29 +278,32 @@ def generate_aroma_workflow(
         applyWarp = Node(ApplyWarp(), name="applyWarp")
         applyWarp.inputs.ref_file = ref
         applyWarp.inputs.field_file = warp
-        if len(affmat) != 0:
-            applyWarp.inputs.premat = affmat
+        applyWarp.inputs.out_file = "melodic_IC_thr_MNI2mm.nii.gz"
+        if len(aff_mat) != 0:
+            applyWarp.inputs.premat = aff_mat
         applyWarp.inputs.interp = "trilinear"
-        aroma_workflow.connect(maskZstat, "out_file", applyWarp, "in_file")
-        aroma_workflow.connect(applyWarp, "out_file", registeredFileNode, "registered_file")
+        aroma_workflow.connect(mask_zstat, "out_file", applyWarp, "in_file")
+        aroma_workflow.connect(applyWarp, "out_file", registered_file_node, "registered_file")
 
     # If only an affmat-file has been specified, perform affine registration to MNI
     else:
-        applyMat = Node(ApplyXFM(), name="applyMat")
-        applyMat.inputs.reference = ref
-        applyMat.inputs.apply_xfm = True
-        applyMat.inputs.in_matrix_file = affmat
-        applyMat.inputs.interp = "trilinear"
-        aroma_workflow.connect(maskZstat, "out_file", applyMat, "in_file")
-        aroma_workflow.connect(applyMat, "out_file", registeredFileNode, "registered_file")
+        apply_mat = Node(ApplyXFM(), name="apply_mat")
+        apply_mat.inputs.reference = ref
+        apply_mat.inputs.apply_xfm = True
+        apply_mat.inputs.in_matrix_file = aff_mat
+        apply_mat.inputs.interp = "trilinear"
+        apply_mat.inputs.out_file = "melodic_IC_thr_MNI2mm.nii.gz"
+        aroma_workflow.connect(mask_zstat, "out_file", apply_mat, "in_file")
+        aroma_workflow.connect(apply_mat, "out_file", registered_file_node, "registered_file")
 
-    print('  - extracting the CSF & Edge fraction features')
+    if aroma_datasink is not None:
+        aroma_workflow.connect(registered_file_node, "registered_file", aroma_datasink, "ica_aroma_results.@reg")
 
     # Define the mask files (do NOT rely on the current working directory)
-    aromaDir = Path(__file__).resolve().parents[1] / 'resources'
-    mask_csf = os.path.join(aromaDir, 'mask_csf.nii.gz')
-    mask_edge = os.path.join(aromaDir, 'mask_edge.nii.gz')
-    mask_out = os.path.join(aromaDir, 'mask_out.nii.gz')
+    aroma_dir = Path(__file__).resolve().parents[1] / 'resources'
+    mask_csf = os.path.join(aroma_dir, 'mask_csf.nii.gz')
+    mask_edge = os.path.join(aroma_dir, 'mask_edge.nii.gz')
+    mask_out = os.path.join(aroma_dir, 'mask_out.nii.gz')
 
     # Check whether the masks exist
     if not os.path.isfile(mask_csf):
@@ -312,128 +315,109 @@ def generate_aroma_workflow(
 
     re_split = Node(Split(), name="re_split")
     re_split.inputs.dimension = "t"
-    aroma_workflow.connect(registeredFileNode, "registered_file", re_split, "in_file")
+    aroma_workflow.connect(registered_file_node, "registered_file", re_split, "in_file")
 
-    absValue = Node(UnaryMaths(), name="absValue")
-    absValue.inputs.operation = "abs"
-    aroma_workflow.connect(registeredFileNode, "registered_file", absValue, "in_file")
+    abs_value = Node(UnaryMaths(), name="abs_value")
+    abs_value.inputs.operation = "abs"
+    aroma_workflow.connect(registered_file_node, "registered_file", abs_value, "in_file")
 
-    totStat = Node(ImageStats(), name="totStat")
-    totStat.inputs.op_string = "-M -V"
-    totStat.inputs.split_4d = True
-    aroma_workflow.connect(absValue, "out_file", totStat, "in_file")
+    tot_stat = Node(ImageStats(), name="tot_stat")
+    tot_stat.inputs.op_string = "-M -V"
+    tot_stat.inputs.split_4d = True
+    aroma_workflow.connect(abs_value, "out_file", tot_stat, "in_file")
 
     apply_csf_mask = Node(ApplyMask(), name="apply_csf_mask")
     apply_csf_mask.inputs.mask_file = mask_csf
-    aroma_workflow.connect(absValue, "out_file", apply_csf_mask, "in_file")
+    aroma_workflow.connect(abs_value, "out_file", apply_csf_mask, "in_file")
 
-    csfStat = Node(ImageStats(), name="csfStat")
-    csfStat.inputs.op_string = "-M -V"
-    csfStat.inputs.split_4d = True
-    aroma_workflow.connect(apply_csf_mask, "out_file", csfStat, "in_file")
+    csf_stat = Node(ImageStats(), name="csf_stat")
+    csf_stat.inputs.op_string = "-M -V"
+    csf_stat.inputs.split_4d = True
+    aroma_workflow.connect(apply_csf_mask, "out_file", csf_stat, "in_file")
 
     apply_edge_mask = Node(ApplyMask(), name="apply_edge_mask")
     apply_edge_mask.inputs.mask_file = mask_edge
-    aroma_workflow.connect(absValue, "out_file", apply_edge_mask, "in_file")
+    aroma_workflow.connect(abs_value, "out_file", apply_edge_mask, "in_file")
 
-    edgeStat = Node(ImageStats(), name="edgeStat")
-    edgeStat.inputs.op_string = "-M -V"
-    edgeStat.inputs.split_4d = True
-    aroma_workflow.connect(apply_edge_mask, "out_file", edgeStat, "in_file")
+    edge_stat = Node(ImageStats(), name="edge_stat")
+    edge_stat.inputs.op_string = "-M -V"
+    edge_stat.inputs.split_4d = True
+    aroma_workflow.connect(apply_edge_mask, "out_file", edge_stat, "in_file")
 
     apply_out_mask = Node(ApplyMask(), name="apply_out_mask")
     apply_out_mask.inputs.mask_file = mask_out
-    aroma_workflow.connect(absValue, "out_file", apply_out_mask, "in_file")
+    aroma_workflow.connect(abs_value, "out_file", apply_out_mask, "in_file")
 
-    outStat = Node(ImageStats(), name="outStat")
-    outStat.inputs.op_string = "-M -V"
-    outStat.inputs.split_4d = True
-    aroma_workflow.connect(apply_out_mask, "out_file", outStat, "in_file")
+    out_stat = Node(ImageStats(), name="out_stat")
+    out_stat.inputs.op_string = "-M -V"
+    out_stat.inputs.split_4d = True
+    aroma_workflow.connect(apply_out_mask, "out_file", out_stat, "in_file")
 
-    mergeStat = Node(Merge(4), name="mergeStat")
-    mergeStat.inputs.axis = "hstack"
-    aroma_workflow.connect(totStat, "out_stat", mergeStat, "in1")
-    aroma_workflow.connect(csfStat, "out_stat", mergeStat, "in2")
-    aroma_workflow.connect(edgeStat, "out_stat", mergeStat, "in3")
-    aroma_workflow.connect(outStat, "out_stat", mergeStat, "in4")
+    feature_spatial = Node(FeatureSpatial(), name="feature_spatial")
+    aroma_workflow.connect(tot_stat, "out_stat", feature_spatial, "tot_stat")
+    aroma_workflow.connect(csf_stat, "out_stat", feature_spatial, "csf_stat")
+    aroma_workflow.connect(edge_stat, "out_stat", feature_spatial, "edge_stat")
+    aroma_workflow.connect(out_stat, "out_stat", feature_spatial, "out_stat")
 
-    print('  - extracting the Maximum RP correlation feature')
     feature_time_series = Node(FeatureTimeSeries(), name="feature_time_series")
     feature_time_series.inputs.mc = mc
-    aroma_workflow.connect(melodic_output, "mix", feature_time_series, "melmix")
+    aroma_workflow.connect(melodic_output, "mel_mix", feature_time_series, "mel_mix")
 
-    print('  - extracting the High-frequency content feature')
     feature_frequency = Node(FeatureFrequency(), name="feature_frequency")
     aroma_workflow.connect(get_tr, "TR", feature_frequency, "TR")
-    aroma_workflow.connect(melodic_output, "melFTmix", feature_frequency, "melFTmix")
+    aroma_workflow.connect(melodic_output, "mel_ft_mix", feature_frequency, "mel_ft_mix")
 
-    print('  - classification')
     aroma_classification = Node(AromaClassification(), name="aroma_classification")
     aroma_workflow.connect(feature_frequency, "HFC", aroma_classification, "HFC")
-    aroma_workflow.connect(feature_time_series, "maxRPcorr", aroma_classification, "maxRPcorr")
+    aroma_workflow.connect(feature_time_series, "max_rp_corr", aroma_classification, "max_rp_corr")
+    aroma_workflow.connect(feature_spatial, "csf_fract", aroma_classification, "csf_fract")
+    aroma_workflow.connect(feature_spatial, "edge_fract", aroma_classification, "edge_fract")
+    if aroma_datasink is not None:
+        aroma_workflow.connect(aroma_classification, "feature_scores",
+                               aroma_datasink, "ica_aroma_results.@feature_scores")
+        aroma_workflow.connect(aroma_classification, "classified_motion_ics",
+                               aroma_datasink, "ica_aroma_results.@classified_motion_ics")
+        aroma_workflow.connect(aroma_classification, "classification_overview",
+                               aroma_datasink, "ica_aroma_results.@classification_overview")
 
-    def calc_edge_fract(stats):
-        import numpy as np
-        edgeFract = np.zeros(len(stats))
-        i = 0
-        for stat in stats:
-            totSum = stat[0][0]*stat[0][1]
-            csfSum = stat[1][0]*stat[1][1]
-            edgeSum = stat[2][0]*stat[2][1]
-            outSum = stat[3][0]*stat[3][1]
-            if not (totSum == 0):
-                edgeFract[i] = (outSum + edgeSum) / (totSum - csfSum) if not ((totSum - csfSum) == 0) else 0
-            else:
-                edgeFract[i] = 0
-            i = i+1
-        return edgeFract
+    if den_type in ['nonaggr', 'both']:
+        nonaggr_denoising = Node(FilterRegressor(), name="nonaggr_denoising", mem_gb=5)
+        nonaggr_denoising.inputs.in_file = in_file
+        nonaggr_denoising.inputs.out_file = "denoised_func_data_nonaggr.nii.gz"
+        aroma_workflow.connect(melodic_output, "mel_mix", nonaggr_denoising, "design_file")
+        aroma_workflow.connect(aroma_classification, "motion_ics", nonaggr_denoising, "filter_columns")
+        if aroma_datasink is not None:
+            aroma_workflow.connect(nonaggr_denoising, "out_file", aroma_datasink, "ica_aroma_results.@noaggr")
 
-    def calc_csf_fract(stats):
-        import numpy as np
-        csfFract = np.zeros(len(stats))
-        i = 0
-        for stat in stats:
-            totSum = stat[0][0]*stat[0][1]
-            csfSum = stat[1][0]*stat[1][1]
-            if not (totSum == 0):
-                csfFract[i] = csfSum / totSum
-            else:
-                csfFract[i] = 0
-            i = i+1
-        return csfFract
-
-    aroma_workflow.connect(mergeStat, ("out", calc_csf_fract), aroma_classification, "csfFract")
-    aroma_workflow.connect(mergeStat, ("out", calc_edge_fract), aroma_classification, "edgeFract")
-
-    if (denType == 'nonaggr') or (denType == 'both'):
-        nonaggr_denoising = Node(FilterRegressor(), name="nonaggr_denoising")
-        nonaggr_denoising.inputs.in_file = inFile
-        #nonaggr_denoising.inputs.out_file = "denoised_func_data_nonaggr.nii.gz"
-        aroma_workflow.connect(melodic_output, "mix", nonaggr_denoising, "design_file")
-        aroma_workflow.connect(aroma_classification, "motionICs", nonaggr_denoising, "filter_columns")
-
-    if (denType == 'aggr') or (denType == 'both'):
-        aggr_denoising = Node(FilterRegressor(), name="aggr_denoising")
-        aggr_denoising.inputs.in_file = inFile
-        #aggr_denoising.inputs.out_file = "denoised_func_data_aggr.nii.gz"
+    if den_type in ['aggr', 'both']:
+        aggr_denoising = Node(FilterRegressor(), name="aggr_denoising", mem_gb=5)
+        aggr_denoising.inputs.in_file = in_file
+        aggr_denoising.inputs.out_file = "denoised_func_data_aggr.nii.gz"
         aggr_denoising.inputs.args = "-a"
-        aroma_workflow.connect(melodic_output, "mix", aggr_denoising, "design_file")
-        aroma_workflow.connect(aroma_classification, "motionICs", aggr_denoising, "filter_columns")
+        aroma_workflow.connect(melodic_output, "mel_mix", aggr_denoising, "design_file")
+        aroma_workflow.connect(aroma_classification, "motion_ics", aggr_denoising, "filter_columns")
+        if aroma_datasink is not None:
+            aroma_workflow.connect(aggr_denoising, "out_file", aroma_datasink, "ica_aroma_results.@aggr")
 
     if generate_plots:
         aroma_classification_plot = Node(AromaClassificationPlot(), name="aroma_classification_plot")
-        aroma_workflow.connect(aroma_classification, "classification_overview", aroma_classification_plot, "classification_overview_file")
+        aroma_workflow.connect(aroma_classification, "classification_overview",
+                               aroma_classification_plot, "classification_overview_file")
+        if aroma_datasink is not None:
+            aroma_workflow.connect(aroma_classification_plot, "out_file", aroma_datasink, "ica_aroma_results.@plot")
 
     return aroma_workflow
 
-    
 def run_aroma_workflow(aroma_workflow, plugin_args=None):
 
     if plugin_args is None:
-        plugin_args = {"mp_context": "fork", "n_procs": 20}
+        plugin_args = {"mp_context": "fork"}
 
+    # TODO: remove this after testing
     aroma_workflow.config['execution'] = {'remove_unnecessary_outputs': 'False',
                                           'keep_inputs': 'True'}
+    aroma_workflow.config["execution"]["crashdump_dir"] = aroma_workflow.base_dir
+
     aroma_workflow.write_graph(graph2use='exec')
     aroma_workflow.run(plugin=MultiProcPlugin(plugin_args=plugin_args))
     
