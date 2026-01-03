@@ -64,58 +64,99 @@ It is recommended to install the package inside a virtual environment.
 
 ## Usage
 
-### As a Python library
-
-The primary intended usage of the package is programmatic, as part of a larger
-neuroimaging pipeline.
-
-```python
-from ica_aroma.pipeline import run_aroma
-
-run_aroma(
-    in_file="input_func.nii.gz",
-    out_dir="output_dir",
-    motion_parameters="motion.txt",
-)
-```
-
-This executes ICA-AROMA using the direct Python implementation, without requiring
-optional dependencies such as Nipype or Matplotlib.
+ICA-AROMA can be executed either using the **direct Python engine** (default) or
+through a **Nipype-based workflow**. Plot generation is enabled by default and
+can be disabled explicitly if optional plotting dependencies are not installed.
 
 ---
 
-### Command Line Interface
+### Direct execution (default engine)
 
-A command-line entry point is provided mainly for convenience, testing, and
-integration in automated scripts.
-
-```bash
-ica-aroma --help
-```
-
-Example:
+This is the default execution mode and does not require Nipype.
 
 ```bash
-ica-aroma   -i input_func.nii.gz   -o output_dir   --mc motion.txt
+ica-aroma -o out -i func.nii.gz -mc mc.par
 ```
 
-> [!NOTE]
-> The set of available command-line options depends on the installed optional
-> dependencies (e.g. Nipype, Matplotlib). Run `ica-aroma --help` to inspect the
-> options available in the current environment.
+Equivalent explicit form:
+
+```bash
+ica-aroma --engine direct -o out -i func.nii.gz -mc mc.par
+```
 
 ---
 
 ### Nipype-based execution
 
-When Nipype is installed, ICA-AROMA can be executed using a Nipype-based workflow.
+To execute ICA-AROMA using a Nipype workflow, the execution engine must be set
+explicitly to `nipype`.
 
 ```bash
-ica-aroma   -i input_func.nii.gz   -o output_dir   --use-nipype
+ica-aroma --engine nipype -o out -i func.nii.gz -mc mc.par
+```
+
+Optional Nipype-specific arguments:
+
+```bash
+ica-aroma --engine nipype   -o out   -i func.nii.gz   -mc mc.par   --nprocs 12   --mp-context spawn
 ```
 
 > [!WARNING]
-> Nipype-based execution requires the `nipype` package to be installed.
+> Nipype-based execution requires the optional dependency `nipype` to be
+> installed:
+>
+> ```bash
+> pip install ica-aroma-py[nipype]
+> ```
+
+---
+
+### Plot generation (Matplotlib)
+
+Plot generation is **enabled by default**.
+
+If plotting dependencies (e.g. Matplotlib) are not installed, execution will
+fail with a clear error message. To explicitly disable plot generation, use the
+`-np / --noplots` flag.
+
+```bash
+ica-aroma -o out -i func.nii.gz -mc mc.par -np
+```
+
+This applies to both direct and Nipype execution modes.
+
+```bash
+ica-aroma --engine nipype -o out -i func.nii.gz -mc mc.par -np
+```
+
+To enable plotting support, install the optional plotting dependencies:
+
+```bash
+pip install ica-aroma-py[plots]
+```
+
+---
+
+### FEAT mode
+
+If a FEAT directory is available, ICA-AROMA can be executed using FEAT mode:
+
+```bash
+ica-aroma -o out -f feat_directory.feat
+```
+
+Additional optional arguments (e.g. `-den`, `-dim`, `-tr`) can be combined with
+any execution mode as required.
+
+---
+
+### Notes
+
+- The execution engine is selected using the `--engine` argument
+  (`direct` or `nipype`).
+- Plot generation is enabled by default and can be disabled using `-np`.
+- Optional dependencies are validated at runtime with explicit error messages.
+- Run `ica-aroma --help` to see the full list of available command-line options.
 
 ---
 
