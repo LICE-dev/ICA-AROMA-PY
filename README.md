@@ -23,12 +23,9 @@ Python 3 refactoring and packaging
 
 ## Introduction
 
-**ICA-AROMA** is a data-driven method for identifying and removing motion-related
-independent components from fMRI data.
+**ICA-AROMA** is a data-driven method for identifying and removing motion-related independent components from fMRI data.
 
-This repository provides a **Python 3 refactoring and packaging** of ICA-AROMA,
-distributed via **PyPI** and intended to be used as a **Python library** inside
-larger neuroimaging pipelines (e.g. SWANe).
+This repository provides a **Python 3 refactoring and packaging** of ICA-AROMA, distributed via **PyPI** and intended to be used as a **Python library** inside larger neuroimaging pipelines (e.g. [SWANe](https://github.com/LICE-dev/swane)).
 
 No changes are introduced to the original algorithm or methodology.
 
@@ -113,9 +110,10 @@ functionality.
 ## Documentation
 
 For the scientific background, theory, and full methodological description,
-please refer to the **official ICA-AROMA repository and manual**:
+please refer to:
 
-- https://github.com/maartenmennes/ICA-AROMA
+- the **official ICA-AROMA repository**: [ICA-AROMA](https://github.com/maartenmennes/ICA-AROMA)
+- the **ICA-AROMA manual**: [Manual (PDF)](https://github.com/maartenmennes/ICA-AROMA/blob/master/Manual.pdf)
 
 This repository focuses exclusively on implementation and packaging aspects.
 
@@ -131,7 +129,8 @@ This repository is a **Python 3 refactoring and redistribution** effort.
 
 Original project and documentation:
 
-- https://github.com/maartenmennes/ICA-AROMA
+- **ICA-AROMA repository**: [ICA-AROMA](https://github.com/maartenmennes/ICA-AROMA)
+- **ICA-AROMA manual**: [Manual (PDF)](https://github.com/maartenmennes/ICA-AROMA/blob/master/Manual.pdf)
 
 ---
 
@@ -148,4 +147,4 @@ Refer to the original repository for licensing and citation details.
 
 - Original ICA-AROMA authors
 - Nipype developers
-- SWANe project contributors
+- [SWANe](https://github.com/LICE-dev/swane) project contributors
