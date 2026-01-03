@@ -147,8 +147,8 @@ If plotting-related features are requested without Matplotlib installed, executi
 
 For the scientific background, theory, and full methodological description, please refer to:
 
-- the **official ICA-AROMA repository**: [ICA-AROMA](https://github.com/maartenmennes/ICA-AROMA)
-- the **ICA-AROMA manual**: [Manual (PDF)](https://github.com/maartenmennes/ICA-AROMA/blob/master/Manual.pdf)
+- the [**official ICA-AROMA repository**](https://github.com/maartenmennes/ICA-AROMA)
+- the [**ICA-AROMA manual**](https://github.com/maartenmennes/ICA-AROMA/blob/master/Manual.pdf)
 
 This repository focuses exclusively on implementation and packaging aspects.
 
@@ -164,8 +164,8 @@ This repository is a **Python 3 refactoring and redistribution** effort.
 
 Original project and documentation:
 
-- **ICA-AROMA repository**: [ICA-AROMA](https://github.com/maartenmennes/ICA-AROMA)
-- **ICA-AROMA manual**: [Manual (PDF)](https://github.com/maartenmennes/ICA-AROMA/blob/master/Manual.pdf)
+- [**ICA-AROMA repository**](https://github.com/maartenmennes/ICA-AROMA)
+- [**ICA-AROMA manual**](https://github.com/maartenmennes/ICA-AROMA/blob/master/Manual.pdf)
 
 ---
 
