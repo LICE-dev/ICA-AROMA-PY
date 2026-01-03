@@ -1,23 +1,172 @@
-# ICA-AROMA
-ICA-AROMA (i.e. ‘ICA-based Automatic Removal Of Motion Artifacts’) concerns a data-driven method to identify and remove motion-related independent components from fMRI data. To that end it exploits a small, but robust set of theoretically motivated features, preventing the need for classifier re-training and therefore providing direct and easy applicability. This package requires an installation of Python and FSL. Read the provided 'Manual.pdf' for a description on how to run ICA-AROMA. Make sure to first install all required python packages: `python -m pip install -r requirements.txt`.
+# ICA-AROMA (Python 3)
 
-**NOTE**: python2.7 is no longer supported as it is not compatible with the required packages anymore.
+Python 3 port and refactoring of **ICA-AROMA** (*Independent Component Analysis -- Automatic Removal Of Motion Artifacts*).
 
-**! NOTE**: Previous versions of the ICA-AROMA scripts (v0.1-beta & v0.2-beta) contained a crucial mistake at the denoising stage of the method. Unfortunately this means that the output of these scripts is incorrect! The issue is solved in version v0.3-beta onwards. It concerns the Python scripts uploaded before the 27th of April 2015.
+This package provides a modern Python implementation of ICA-AROMA, distributed via **PyPI** and intended to be used primarily as a **Python library**, with optional command-line usage and optional **Nipype** integration.
 
-**Log report (applied changes from v0.2-beta to v0.3-beta):**
+> **Important**\
+> This repository is **not a replacement for the original ICA-AROMA > project**.
+> For the scientific background, theory, and full methodological description, please refer to the official ICA-AROMA repository and manual:
+>
+> https://github.com/maartenmennes/ICA-AROMA
+> https://github.com/maartenmennes/ICA-AROMA/blob/master/Manual.pdf
 
-1) Correct for incorrect definition of the string of indices of the components to be removed by *fsl_regfilt*:
+------------------------------------------------------------------------
 
-	changed   denIdxStr = np.char.mod('%i',denIdx)
-	to        denIdxStr = np.char.mod('%i',(denIdx+1))
-2) Now take the maximum of the 'absolute' value of the correlation between the component time-course and set of realignment parameters: 
+## Overview
 
-	changed   maxTC[i,:] = corMatrix.max(axis=1)
-	to        corMatrixAbs = np.abs(corMatrix)
-              maxTC[i,:] = corMatrixAbs.max(axis=1)
-3) Correct for the fact that the defined frequency-range, used for the high-frequency content feature, in few cases did not include the final Nyquist frequency due to limited numerical precision:
+ICA-AROMA is a data-driven method for identifying and removing motion-related independent components from fMRI data.
 
-	changed   step = Ny / FT.shape[0]
-	          f = np.arange(step,Ny,step)
-	to        f = Ny*(np.array(range(1,FT.shape[0]+1)))/(FT.shape[0])
+This Python 3 refactoring focuses on:
+
+-   modern Python compatibility
+-   modular and maintainable code
+-   optional heavy dependencies
+-   easy integration into larger pipelines (e.g. SWANe)
+
+No methodological changes are introduced compared to the original implementation.
+
+------------------------------------------------------------------------
+
+## Installation
+
+The package is distributed via **PyPI**.
+
+``` bash
+pip install ica-aroma
+```
+
+It is strongly recommended to install the package inside a virtual environment.
+
+------------------------------------------------------------------------
+
+## Optional Dependencies
+
+### Nipype
+
+Support for executing ICA-AROMA as part of a **Nipype workflow** is optional.
+
+Install Nipype only if this functionality is required:
+
+``` bash
+pip install nipype
+```
+
+If Nipype-related features are requested without Nipype being installed, the package will stop execution with a **clear, user-oriented error message** explaining how to enable this functionality.
+
+------------------------------------------------------------------------
+
+## Usage
+
+### As a Python library
+
+The primary intended usage is as a Python module inside a larger analysis pipeline.
+
+``` python
+from ica_aroma.pipeline import run_aroma
+
+run_aroma(
+    in_file="input_func.nii.gz",
+    out_dir="output_dir",
+    motion_parameters="motion.txt",
+)
+```
+
+This executes ICA-AROMA using the direct Python implementation, without Nipype.
+
+------------------------------------------------------------------------
+
+### Nipype-based execution
+
+When Nipype is installed, ICA-AROMA can be executed through a Nipype workflow.
+
+``` python
+from ica_aroma.pipeline import run_aroma
+
+run_aroma(
+    in_file="input_func.nii.gz",
+    out_dir="output_dir",
+    use_nipype=True,
+)
+```
+
+------------------------------------------------------------------------
+
+## Command Line Interface
+
+Although primarily designed as a library, a command-line entry point is provided for convenience and testing.
+
+``` bash
+ica-aroma --help
+```
+
+The CLI performs validation of:
+
+-   required arguments
+-   incompatible options
+-   missing optional dependencies (e.g. Nipype)
+
+All errors are reported with **actionable and explicit messages**.
+
+------------------------------------------------------------------------
+
+## Error Handling Philosophy
+
+-   No raw `ModuleNotFoundError` is exposed to the user
+-   Optional features fail gracefully
+-   Error messages explicitly describe:
+    -   the requested feature
+    -   the missing dependency
+    -   the steps required to enable it
+
+------------------------------------------------------------------------
+
+## Project Structure
+
+``` text
+ica_aroma/
+├── cli.py
+├── pipeline.py
+├── ICA_AROMA_functions.py
+├── __init__.py
+```
+
+-   `ICA_AROMA_functions.py`\
+    Core ICA-AROMA algorithmic logic
+
+-   `pipeline.py`\
+    Execution logic (direct Python or Nipype-based)
+
+-   `cli.py`\
+    Argument parsing and runtime validation
+
+------------------------------------------------------------------------
+
+## Relationship to the Original ICA-AROMA Project
+
+This repository is a **Python 3 refactoring and packaging effort**.
+
+-   Algorithmic logic and scientific concepts are derived from the original work
+-   No changes to the underlying method are introduced
+-   Users should always cite and refer to the original ICA-AROMA publication
+
+Official repository and manual:
+
+-   https://github.com/maartenmennes/ICA-AROMA
+-   https://github.com/maartenmennes/ICA-AROMA/blob/master/Manual.pdf
+
+------------------------------------------------------------------------
+
+## License
+
+This project follows the license of the original ICA-AROMA project unless explicitly stated otherwise.
+
+Please refer to the original repository for licensing and citation details.
+
+------------------------------------------------------------------------
+
+## Acknowledgements
+
+-   Original ICA-AROMA authors
+-   Nipype developers
+-   SWANe project contributors
