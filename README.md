@@ -64,13 +64,47 @@ It is recommended to install the package inside a virtual environment.
 
 ## Usage
 
-ICA-AROMA can be executed either using the **direct Python engine** (default) or
-through a **Nipype-based workflow**. Plot generation is enabled by default and
-can be disabled explicitly if optional plotting dependencies are not installed.
+ICA-AROMA is intended to be used primarily as a **Python library** inside larger neuroimaging pipelines, but it also provides a **command-line interface (CLI)** for convenience, testing, and automation.
 
 ---
 
-### Direct execution (default engine)
+### As a Python library
+
+Typical usage from Python:
+
+```python
+from ica_aroma.pipeline import run_aroma
+
+run_aroma(
+    in_file="func.nii.gz",
+    out_dir="out",
+    motion_parameters="mc.par",
+)
+```
+
+Notes:
+
+- This runs the **direct** Python implementation.
+- Optional features (e.g. plotting, Nipype workflow execution) depend on which  optional dependencies are installed in the environment.
+
+---
+
+### Command Line Interface (CLI)
+
+Run:
+
+```bash
+ica-aroma --help
+```
+
+to inspect all available options in your environment.
+
+ICA-AROMA can be executed either using the **direct engine** (default) or through a **Nipype-based workflow**.
+Plot generation is enabled by default and can be disabled explicitly if optional plotting dependencies are not installed.
+
+---
+
+#### Direct execution (default engine)
 
 This is the default execution mode and does not require Nipype.
 
@@ -86,10 +120,9 @@ ica-aroma --engine direct -o out -i func.nii.gz -mc mc.par
 
 ---
 
-### Nipype-based execution
+#### Nipype-based execution
 
-To execute ICA-AROMA using a Nipype workflow, the execution engine must be set
-explicitly to `nipype`.
+To execute ICA-AROMA using a Nipype workflow, the execution engine must be set explicitly to `nipype`.
 
 ```bash
 ica-aroma --engine nipype -o out -i func.nii.gz -mc mc.par
@@ -102,8 +135,7 @@ ica-aroma --engine nipype   -o out   -i func.nii.gz   -mc mc.par   --nprocs 12  
 ```
 
 > [!WARNING]
-> Nipype-based execution requires the optional dependency `nipype` to be
-> installed:
+> Nipype-based execution requires the optional dependency `nipype` to be installed:
 >
 > ```bash
 > pip install ica-aroma-py[nipype]
@@ -111,19 +143,17 @@ ica-aroma --engine nipype   -o out   -i func.nii.gz   -mc mc.par   --nprocs 12  
 
 ---
 
-### Plot generation (Matplotlib)
+#### Plot generation (Matplotlib)
 
 Plot generation is **enabled by default**.
 
-If plotting dependencies (e.g. Matplotlib) are not installed, execution will
-fail with a clear error message. To explicitly disable plot generation, use the
-`-np / --noplots` flag.
+If plotting dependencies (e.g. Matplotlib) are not installed, execution will fail with a clear error message. To explicitly disable plot generation, use the `-np / --noplots` flag.
 
 ```bash
 ica-aroma -o out -i func.nii.gz -mc mc.par -np
 ```
 
-This applies to both direct and Nipype execution modes.
+This applies to both direct and Nipype execution modes:
 
 ```bash
 ica-aroma --engine nipype -o out -i func.nii.gz -mc mc.par -np
@@ -137,7 +167,7 @@ pip install ica-aroma-py[plots]
 
 ---
 
-### FEAT mode
+#### FEAT mode
 
 If a FEAT directory is available, ICA-AROMA can be executed using FEAT mode:
 
@@ -145,15 +175,13 @@ If a FEAT directory is available, ICA-AROMA can be executed using FEAT mode:
 ica-aroma -o out -f feat_directory.feat
 ```
 
-Additional optional arguments (e.g. `-den`, `-dim`, `-tr`) can be combined with
-any execution mode as required.
+Additional optional arguments (e.g. `-den`, `-dim`, `-tr`) can be combined with any execution mode as required.
 
 ---
 
 ### Notes
 
-- The execution engine is selected using the `--engine` argument
-  (`direct` or `nipype`).
+- The execution engine is selected using the `--engine` argument (`direct` or `nipype`).
 - Plot generation is enabled by default and can be disabled using `-np`.
 - Optional dependencies are validated at runtime with explicit error messages.
 - Run `ica-aroma --help` to see the full list of available command-line options.
