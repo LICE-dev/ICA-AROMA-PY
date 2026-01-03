@@ -1,8 +1,11 @@
-<h1 align="center"> ICA-AROMA (Python 3)</h1><br>
-
+<h1 align="center">
+    ICA-AROMA (Python 3)
+</h1>
+<br>
 <h3 align="center">
-Independent Component Analysis – Automatic Removal Of Motion Artifacts<br>
-Python 3 refactoring and packaging
+    Independent Component Analysis – Automatic Removal Of Motion Artifacts
+    <br>
+    Python 3 refactoring and packaging
 </h3>
 
 ---
@@ -52,7 +55,7 @@ This project **does not aim** to:
 The package is distributed via **PyPI**.
 
 ```bash
-pip install ica-aroma
+pip install ica-aroma-py
 ```
 
 It is recommended to install the package inside a virtual environment.
@@ -63,7 +66,8 @@ It is recommended to install the package inside a virtual environment.
 
 ### As a Python library
 
-The primary intended usage is programmatic, inside a Python pipeline.
+The primary intended usage of the package is programmatic, as part of a larger
+neuroimaging pipeline.
 
 ```python
 from ica_aroma.pipeline import run_aroma
@@ -75,19 +79,43 @@ run_aroma(
 )
 ```
 
-This executes ICA-AROMA using the direct Python implementation.
+This executes ICA-AROMA using the direct Python implementation, without requiring
+optional dependencies such as Nipype or Matplotlib.
 
 ---
 
 ### Command Line Interface
 
-A command-line entry point is provided mainly for convenience and testing.
+A command-line entry point is provided mainly for convenience, testing, and
+integration in automated scripts.
 
 ```bash
 ica-aroma --help
 ```
 
-The CLI validates arguments and reports clear, actionable error messages.
+Example:
+
+```bash
+ica-aroma   -i input_func.nii.gz   -o output_dir   --mc motion.txt
+```
+
+> [!NOTE]
+> The set of available command-line options depends on the installed optional
+> dependencies (e.g. Nipype, Matplotlib). Run `ica-aroma --help` to inspect the
+> options available in the current environment.
+
+---
+
+### Nipype-based execution
+
+When Nipype is installed, ICA-AROMA can be executed using a Nipype-based workflow.
+
+```bash
+ica-aroma   -i input_func.nii.gz   -o output_dir   --use-nipype
+```
+
+> [!WARNING]
+> Nipype-based execution requires the `nipype` package to be installed.
 
 ---
 
@@ -101,16 +129,23 @@ Support for execution through a **Nipype workflow** is optional.
 pip install nipype
 ```
 
-If Nipype-related features are requested without Nipype being installed, execution
-will stop with a **human-readable error message** explaining how to enable this
-functionality.
+If Nipype-related features are requested without Nipype being installed, execution will stop with a **human-readable error message** explaining how to enable this functionality.
+
+### Matplotlib
+
+Matplotlib is required only for plotting and visualization features (e.g. feature distributions and diagnostic plots).
+
+```bash
+pip install matplotlib
+```
+
+If plotting-related features are requested without Matplotlib installed, execution will stop with a **human-readable error message** explaining how to enable this functionality.
 
 ---
 
 ## Documentation
 
-For the scientific background, theory, and full methodological description,
-please refer to:
+For the scientific background, theory, and full methodological description, please refer to:
 
 - the **official ICA-AROMA repository**: [ICA-AROMA](https://github.com/maartenmennes/ICA-AROMA)
 - the **ICA-AROMA manual**: [Manual (PDF)](https://github.com/maartenmennes/ICA-AROMA/blob/master/Manual.pdf)
@@ -136,8 +171,7 @@ Original project and documentation:
 
 ## License
 
-This project follows the license of the original ICA-AROMA project unless
-explicitly stated otherwise.
+This project follows the license of the original ICA-AROMA project unless explicitly stated otherwise.
 
 Refer to the original repository for licensing and citation details.
 
