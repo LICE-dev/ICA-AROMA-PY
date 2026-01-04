@@ -6,7 +6,7 @@ import numpy as np
 import random
 import os
 import subprocess
-
+from .. import aroma_mask_out, aroma_mask_edge, aroma_mask_csf
 
 # Denoising types accepted
 accepted_den_types = {'nonaggr', 'aggr', 'both', 'no'}
@@ -371,19 +371,6 @@ def feature_spatial(fsl_dir, temp_dir, aroma_dir, mel_ic):
     csf_fract:   Array of the CSF fraction feature scores for the components of the melIC file
     """
 
-    # Define the mask files (do NOT rely on the current working directory)
-    mask_csf = os.path.join(aroma_dir, 'mask_csf.nii.gz')
-    mask_edge = os.path.join(aroma_dir, 'mask_edge.nii.gz')
-    mask_out = os.path.join(aroma_dir, 'mask_out.nii.gz')
-
-    # Check whether the masks exist
-    if not os.path.isfile(mask_csf):
-        raise FileNotFoundError('The specified CSF mask does not exist: ' + mask_csf)
-    if not os.path.isfile(mask_edge):
-        raise FileNotFoundError('The specified edge mask does not exist: ' + mask_edge)
-    if not os.path.isfile(mask_out):
-        raise FileNotFoundError('The specified outside-brain mask does not exist: ' + mask_out)
-
     # Get the number of ICs
     num_ics = int(subprocess.getoutput('%sfslinfo %s | grep dim4 | head -n1 | awk \'{print $2}\'' % (fsl_dir, mel_ic)))
 
@@ -427,13 +414,13 @@ def feature_spatial(fsl_dir, temp_dir, aroma_dir, mel_ic):
         # of non-zero voxels)
         csf_vox = int(subprocess.getoutput(' '.join([os.path.join(fsl_dir, 'fslstats'),
                                                     temp_ic,
-                                                    '-k ' + mask_csf,
+                                                    '-k ' + aroma_mask_csf,
                                                     '-V | awk \'{print $1}\''])))
 
         if not (csf_vox == 0):
             csf_mean = float(subprocess.getoutput(' '.join([os.path.join(fsl_dir, 'fslstats'),
                                                            temp_ic,
-                                                           '-k ' + mask_csf,
+                                                           '-k ' + aroma_mask_csf,
                                                            '-M'])))
         else:
             csf_mean = 0
@@ -444,13 +431,13 @@ def feature_spatial(fsl_dir, temp_dir, aroma_dir, mel_ic):
         # non-zero voxels)
         edge_vox = int(subprocess.getoutput(' '.join([os.path.join(fsl_dir, 'fslstats'),
                                                      temp_ic,
-                                                     '-k ' + mask_edge,
+                                                     '-k ' + aroma_mask_edge,
                                                      '-V | awk \'{print $1}\''])))
 
         if not (edge_vox == 0):
             edge_mean = float(subprocess.getoutput(' '.join([os.path.join(fsl_dir, 'fslstats'),
                                                             temp_ic,
-                                                            '-k ' + mask_edge,
+                                                            '-k ' + aroma_mask_edge,
                                                             '-M'])))
         else:
             edge_mean = 0
@@ -461,13 +448,13 @@ def feature_spatial(fsl_dir, temp_dir, aroma_dir, mel_ic):
         # of non-zero voxels)
         out_vox = int(subprocess.getoutput(' '.join([os.path.join(fsl_dir, 'fslstats'),
                                                     temp_ic,
-                                                    '-k ' + mask_out,
+                                                    '-k ' + aroma_mask_out,
                                                     '-V | awk \'{print $1}\''])))
 
         if not (out_vox == 0):
             out_mean = float(subprocess.getoutput(' '.join([os.path.join(fsl_dir, 'fslstats'),
                                                            temp_ic,
-                                                           '-k ' + mask_out,
+                                                           '-k ' + aroma_mask_out,
                                                            '-M'])))
         else:
             out_mean = 0
