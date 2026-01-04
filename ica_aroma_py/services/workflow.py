@@ -1,15 +1,15 @@
 # Import required modules
 from nipype.pipeline.engine import Node, Workflow
 from nipype.pipeline.plugins import MultiProcPlugin
-from .ICA_AROMA_nodes import (GetNiftiTR, FslNVols, IsoResample, FeatureTimeSeries, FeatureFrequency,
+from .ICA_AROMA_nodes import (GetNiftiTR, IsoResample, FeatureTimeSeries, FeatureFrequency,
                               AromaClassification, AromaClassificationPlot, FeatureSpatial, FeatureSpatialPrep)
-from nipype.interfaces.fsl import (BET, ImageMaths, MELODIC, ExtractROI, Merge as fslMerge, ApplyMask, ApplyXFM,
-                                   ApplyWarp, UnaryMaths, ImageStats, Split, FilterRegressor)
-from nipype import SelectFiles, MapNode, IdentityInterface, DataSink
+from nipype.interfaces.fsl import (BET, ImageMaths, MELODIC, ApplyXFM,
+                                   ApplyWarp, FilterRegressor)
+from nipype import SelectFiles, IdentityInterface, DataSink
 import os
 from pathlib import Path
-from .ICA_AROMA_functions import accepted_den_types, feature_spatial
-
+from .ICA_AROMA_functions import accepted_den_types
+from .. import aroma_mask_out, aroma_mask_edge, aroma_mask_csf
 
 def generate_aroma_workflow(
     out_dir,
@@ -313,20 +313,6 @@ def generate_aroma_workflow(
     if aroma_datasink is not None:
         aroma_workflow.connect(registered_file_node, "registered_file", aroma_datasink, "ica_aroma_results.@reg")
 
-    # Define the mask files (do NOT rely on the current working directory)
-    aroma_dir = Path(__file__).resolve().parents[1] / 'resources'
-    mask_csf = os.path.join(aroma_dir, 'mask_csf.nii.gz')
-    mask_edge = os.path.join(aroma_dir, 'mask_edge.nii.gz')
-    mask_out = os.path.join(aroma_dir, 'mask_out.nii.gz')
-
-    # Check whether the masks exist
-    if not os.path.isfile(mask_csf):
-        raise FileNotFoundError('The specified CSF mask does not exist: ' + mask_csf)
-    if not os.path.isfile(mask_edge):
-        raise FileNotFoundError('The specified edge mask does not exist: ' + mask_edge)
-    if not os.path.isfile(mask_out):
-        raise FileNotFoundError('The specified outside-brain mask does not exist: ' + mask_out)
-
     # TODO: delete if everythings work with new node
     # re_split = Node(Split(), name="re_split")
     # re_split.inputs.dimension = "t"
@@ -369,9 +355,9 @@ def generate_aroma_workflow(
     # aroma_workflow.connect(apply_out_mask, "out_file", out_stat, "in_file")
 
     feature_spatial = Node(FeatureSpatial(), name="feature_spatial")
-    feature_spatial.inputs.mask_csf = mask_csf
-    feature_spatial.inputs.mask_edge = mask_edge
-    feature_spatial.inputs.mask_out = mask_out
+    feature_spatial.inputs.mask_csf =  aroma_mask_csf
+    feature_spatial.inputs.mask_edge = aroma_mask_edge
+    feature_spatial.inputs.mask_out = aroma_mask_out
     aroma_workflow.connect(registered_file_node, "registered_file", feature_spatial, "in_file")
     # aroma_workflow.connect(tot_stat, "out_stat", feature_spatial, "tot_stat")
     # aroma_workflow.connect(csf_stat, "out_stat", feature_spatial, "csf_stat")

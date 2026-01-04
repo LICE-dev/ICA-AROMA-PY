@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 from . import ICA_AROMA_functions as AromaFunc
+
 accepted_den_types = AromaFunc.accepted_den_types
 
 def run_aroma(
