@@ -131,8 +131,6 @@ def main(argv=None):
         if args.nprocs:
             plugin_args["n_procs"] = args.nprocs
 
-        print(args.nprocs)
-
         run_aroma_workflow(
             wf,
             plugin_args=plugin_args,
