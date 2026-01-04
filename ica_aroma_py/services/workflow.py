@@ -2,13 +2,14 @@
 from nipype.pipeline.engine import Node, Workflow
 from nipype.pipeline.plugins import MultiProcPlugin
 from .ICA_AROMA_nodes import (GetNiftiTR, FslNVols, IsoResample, FeatureTimeSeries, FeatureFrequency,
-                              AromaClassification, AromaClassificationPlot, FeatureSpatial)
+                              AromaClassification, AromaClassificationPlot, FeatureSpatial, FeatureSpatialPrep)
 from nipype.interfaces.fsl import (BET, ImageMaths, MELODIC, ExtractROI, Merge as fslMerge, ApplyMask, ApplyXFM,
                                    ApplyWarp, UnaryMaths, ImageStats, Split, FilterRegressor)
 from nipype import SelectFiles, MapNode, IdentityInterface, DataSink
 import os
 from pathlib import Path
-from .ICA_AROMA_functions import accepted_den_types
+from .ICA_AROMA_functions import accepted_den_types, feature_spatial
+
 
 def generate_aroma_workflow(
     out_dir,
@@ -40,6 +41,15 @@ def generate_aroma_workflow(
     # Define variables based on the type of input (i.e. Feat directory or specific input arguments),
     # and check whether the specified files exist.
     cancel = False
+
+    inputnode = Node(IdentityInterface(fields=[
+        "in_file",
+        "mc",
+        "aff_mat",
+        "warp",
+        "",
+        "",
+    ]), name="inputnode")
 
     if in_feat:
         # Check whether the Feat directory exists
@@ -225,35 +235,39 @@ def generate_aroma_workflow(
     aroma_workflow.connect(melodic, "out_dir", melodic_output, "melodic_dir")
     aroma_workflow.connect(melodic, "out_dir", melodic_output, "base_directory")
 
-    get_ic_n = Node(FslNVols(), name="get_ic_n")
-    aroma_workflow.connect(melodic_output, "IC", get_ic_n, "in_file")
+    # get_ic_n = Node(FslNVols(), name="get_ic_n")
+    # aroma_workflow.connect(melodic_output, "IC", get_ic_n, "in_file")
 
-    # Merge mixture modeled thresholded spatial maps.
-    # Note! In case that mixture modeling did not converge, the file will contain two spatial maps.
-    # The latter being the results from a simple null hypothesis test.
-    # In that case, this map will have to be used (the first one will be empty).
-    get_zstat_n = MapNode(FslNVols(),
-                        name="get_zstat_n",
-                        iterfield=["in_file"])
-    aroma_workflow.connect(melodic_output, "thresh_zstat_files", get_zstat_n, "in_file")
+    feature_spatial_prep = Node(FeatureSpatialPrep(), name="feature_spatial_prep")
+    aroma_workflow.connect(melodic_output, "thresh_zstat_files", feature_spatial_prep, "in_files")
+    aroma_workflow.connect(mask, "mask", feature_spatial_prep, "mask_file")
 
-    def reduce_n_by_1(voln_list):
-        return [*map(lambda x: x - 1, voln_list)]
-
-    last_zstat = MapNode(ExtractROI(),
-                         name="last_zstat",
-                         iterfield=["in_file", "t_min"])
-    last_zstat.inputs.t_size = 1
-    aroma_workflow.connect(melodic_output, "thresh_zstat_files", last_zstat, "in_file")
-    aroma_workflow.connect(get_zstat_n, ("n_vols", reduce_n_by_1), last_zstat, "t_min")
-
-    merge_zstat = Node(fslMerge(), name="merge_zstat")
-    merge_zstat.inputs.dimension = 't'
-    aroma_workflow.connect(last_zstat, "roi_file", merge_zstat, "in_files")
-
-    mask_zstat = Node(ApplyMask(), name="mask_zstat")
-    aroma_workflow.connect(merge_zstat, "merged_file", mask_zstat, "in_file")
-    aroma_workflow.connect(mask, "mask", mask_zstat, "mask_file")
+    # # Merge mixture modeled thresholded spatial maps.
+    # # Note! In case that mixture modeling did not converge, the file will contain two spatial maps.
+    # # The latter being the results from a simple null hypothesis test.
+    # # In that case, this map will have to be used (the first one will be empty).
+    # get_zstat_n = MapNode(FslNVols(),
+    #                     name="get_zstat_n",
+    #                     iterfield=["in_file"])
+    # aroma_workflow.connect(melodic_output, "thresh_zstat_files", get_zstat_n, "in_file")
+    #
+    # def reduce_n_by_1(voln_list):
+    #     return [*map(lambda x: x - 1, voln_list)]
+    #
+    # last_zstat = MapNode(ExtractROI(),
+    #                      name="last_zstat",
+    #                      iterfield=["in_file", "t_min"])
+    # last_zstat.inputs.t_size = 1
+    # aroma_workflow.connect(melodic_output, "thresh_zstat_files", last_zstat, "in_file")
+    # aroma_workflow.connect(get_zstat_n, ("n_vols", reduce_n_by_1), last_zstat, "t_min")
+    #
+    # merge_zstat = Node(fslMerge(), name="merge_zstat")
+    # merge_zstat.inputs.dimension = 't'
+    # aroma_workflow.connect(last_zstat, "roi_file", merge_zstat, "in_files")
+    #
+    # mask_zstat = Node(ApplyMask(), name="mask_zstat")
+    # aroma_workflow.connect(merge_zstat, "merged_file", mask_zstat, "in_file")
+    # aroma_workflow.connect(mask, "mask", mask_zstat, "mask_file")
 
     # Define the MNI152 T1 2mm template
     fsl_no_bin = fsl_dir.rsplit('/', 2)[0]
@@ -269,7 +283,7 @@ def generate_aroma_workflow(
         file_resample.inputs.reference = ref
         file_resample.inputs.dim = 2
         file_resample.inputs.out_file = "melodic_IC_thr_MNI2mm.nii.gz"
-        aroma_workflow.connect(mask_zstat, "out_file", file_resample, "in_file")
+        aroma_workflow.connect(feature_spatial_prep, "out_file", file_resample, "in_file")
         aroma_workflow.connect(file_resample, "out_file", registered_file_node, "registered_file")
 
     # If a warp-file has been specified, apply it and an eventual affmat provided
@@ -282,7 +296,7 @@ def generate_aroma_workflow(
         if len(aff_mat) != 0:
             applyWarp.inputs.premat = aff_mat
         applyWarp.inputs.interp = "trilinear"
-        aroma_workflow.connect(mask_zstat, "out_file", applyWarp, "in_file")
+        aroma_workflow.connect(feature_spatial_prep, "out_file", applyWarp, "in_file")
         aroma_workflow.connect(applyWarp, "out_file", registered_file_node, "registered_file")
 
     # If only an affmat-file has been specified, perform affine registration to MNI
@@ -293,7 +307,7 @@ def generate_aroma_workflow(
         apply_mat.inputs.in_matrix_file = aff_mat
         apply_mat.inputs.interp = "trilinear"
         apply_mat.inputs.out_file = "melodic_IC_thr_MNI2mm.nii.gz"
-        aroma_workflow.connect(mask_zstat, "out_file", apply_mat, "in_file")
+        aroma_workflow.connect(feature_spatial_prep, "out_file", apply_mat, "in_file")
         aroma_workflow.connect(apply_mat, "out_file", registered_file_node, "registered_file")
 
     if aroma_datasink is not None:
@@ -313,51 +327,56 @@ def generate_aroma_workflow(
     if not os.path.isfile(mask_out):
         raise FileNotFoundError('The specified outside-brain mask does not exist: ' + mask_out)
 
-    re_split = Node(Split(), name="re_split")
-    re_split.inputs.dimension = "t"
-    aroma_workflow.connect(registered_file_node, "registered_file", re_split, "in_file")
+    # TODO: delete if everythings work with new node
+    # re_split = Node(Split(), name="re_split")
+    # re_split.inputs.dimension = "t"
+    # aroma_workflow.connect(registered_file_node, "registered_file", re_split, "in_file")
 
-    abs_value = Node(UnaryMaths(), name="abs_value")
-    abs_value.inputs.operation = "abs"
-    aroma_workflow.connect(registered_file_node, "registered_file", abs_value, "in_file")
-
-    tot_stat = Node(ImageStats(), name="tot_stat")
-    tot_stat.inputs.op_string = "-M -V"
-    tot_stat.inputs.split_4d = True
-    aroma_workflow.connect(abs_value, "out_file", tot_stat, "in_file")
-
-    apply_csf_mask = Node(ApplyMask(), name="apply_csf_mask")
-    apply_csf_mask.inputs.mask_file = mask_csf
-    aroma_workflow.connect(abs_value, "out_file", apply_csf_mask, "in_file")
-
-    csf_stat = Node(ImageStats(), name="csf_stat")
-    csf_stat.inputs.op_string = "-M -V"
-    csf_stat.inputs.split_4d = True
-    aroma_workflow.connect(apply_csf_mask, "out_file", csf_stat, "in_file")
-
-    apply_edge_mask = Node(ApplyMask(), name="apply_edge_mask")
-    apply_edge_mask.inputs.mask_file = mask_edge
-    aroma_workflow.connect(abs_value, "out_file", apply_edge_mask, "in_file")
-
-    edge_stat = Node(ImageStats(), name="edge_stat")
-    edge_stat.inputs.op_string = "-M -V"
-    edge_stat.inputs.split_4d = True
-    aroma_workflow.connect(apply_edge_mask, "out_file", edge_stat, "in_file")
-
-    apply_out_mask = Node(ApplyMask(), name="apply_out_mask")
-    apply_out_mask.inputs.mask_file = mask_out
-    aroma_workflow.connect(abs_value, "out_file", apply_out_mask, "in_file")
-
-    out_stat = Node(ImageStats(), name="out_stat")
-    out_stat.inputs.op_string = "-M -V"
-    out_stat.inputs.split_4d = True
-    aroma_workflow.connect(apply_out_mask, "out_file", out_stat, "in_file")
+    # abs_value = Node(UnaryMaths(), name="abs_value")
+    # abs_value.inputs.operation = "abs"
+    # aroma_workflow.connect(registered_file_node, "registered_file", abs_value, "in_file")
+    #
+    # tot_stat = Node(ImageStats(), name="tot_stat")
+    # tot_stat.inputs.op_string = "-M -V"
+    # tot_stat.inputs.split_4d = True
+    # aroma_workflow.connect(abs_value, "out_file", tot_stat, "in_file")
+    #
+    # apply_csf_mask = Node(ApplyMask(), name="apply_csf_mask")
+    # apply_csf_mask.inputs.mask_file = mask_csf
+    # aroma_workflow.connect(abs_value, "out_file", apply_csf_mask, "in_file")
+    #
+    # csf_stat = Node(ImageStats(), name="csf_stat")
+    # csf_stat.inputs.op_string = "-M -V"
+    # csf_stat.inputs.split_4d = True
+    # aroma_workflow.connect(apply_csf_mask, "out_file", csf_stat, "in_file")
+    #
+    # apply_edge_mask = Node(ApplyMask(), name="apply_edge_mask")
+    # apply_edge_mask.inputs.mask_file = mask_edge
+    # aroma_workflow.connect(abs_value, "out_file", apply_edge_mask, "in_file")
+    #
+    # edge_stat = Node(ImageStats(), name="edge_stat")
+    # edge_stat.inputs.op_string = "-M -V"
+    # edge_stat.inputs.split_4d = True
+    # aroma_workflow.connect(apply_edge_mask, "out_file", edge_stat, "in_file")
+    #
+    # apply_out_mask = Node(ApplyMask(), name="apply_out_mask")
+    # apply_out_mask.inputs.mask_file = mask_out
+    # aroma_workflow.connect(abs_value, "out_file", apply_out_mask, "in_file")
+    #
+    # out_stat = Node(ImageStats(), name="out_stat")
+    # out_stat.inputs.op_string = "-M -V"
+    # out_stat.inputs.split_4d = True
+    # aroma_workflow.connect(apply_out_mask, "out_file", out_stat, "in_file")
 
     feature_spatial = Node(FeatureSpatial(), name="feature_spatial")
-    aroma_workflow.connect(tot_stat, "out_stat", feature_spatial, "tot_stat")
-    aroma_workflow.connect(csf_stat, "out_stat", feature_spatial, "csf_stat")
-    aroma_workflow.connect(edge_stat, "out_stat", feature_spatial, "edge_stat")
-    aroma_workflow.connect(out_stat, "out_stat", feature_spatial, "out_stat")
+    feature_spatial.inputs.mask_csf = mask_csf
+    feature_spatial.inputs.mask_edge = mask_edge
+    feature_spatial.inputs.mask_out = mask_out
+    aroma_workflow.connect(registered_file_node, "registered_file", feature_spatial, "in_file")
+    # aroma_workflow.connect(tot_stat, "out_stat", feature_spatial, "tot_stat")
+    # aroma_workflow.connect(csf_stat, "out_stat", feature_spatial, "csf_stat")
+    # aroma_workflow.connect(edge_stat, "out_stat", feature_spatial, "edge_stat")
+    # aroma_workflow.connect(out_stat, "out_stat", feature_spatial, "out_stat")
 
     feature_time_series = Node(FeatureTimeSeries(), name="feature_time_series")
     feature_time_series.inputs.mc = mc

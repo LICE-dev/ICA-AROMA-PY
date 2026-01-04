@@ -1,7 +1,8 @@
 # -*- DISCLAIMER: this file contains code derived from Nipype (https://github.com/nipy/nipype/blob/master/LICENSE)  -*-
-from nipype.interfaces.fsl import FLIRT
+from nipype.interfaces.fsl import FLIRT, UnaryMaths, ImageStats, ApplyMask, ExtractROI, Merge as fslMerge
 from nipype.interfaces.fsl.base import FSLCommand, FSLCommandInputSpec
-from nipype.interfaces.base import traits, TraitedSpec, File, isdefined, BaseInterfaceInputSpec, BaseInterface
+from nipype.interfaces.base import (traits, TraitedSpec, File, isdefined, BaseInterfaceInputSpec, BaseInterface,
+                                    InputMultiObject)
 from nibabel import load
 import shutil
 import os
@@ -159,10 +160,18 @@ class IsoResample(BaseInterface):
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.BaseInterfaceInputSpec)  -*-
 class FeatureSpatialInputSpec(BaseInterfaceInputSpec):
-    tot_stat = traits.List(mandatory=True, desc="Mean and number of non-zero voxels within the total Z-map")
-    csf_stat = traits.List(mandatory=True, desc="Mean and number of non-zero voxels within the csf Z-map")
-    edge_stat = traits.List(mandatory=True, desc="Mean and number of non-zero voxels within the edge Z-map")
-    out_stat = traits.List(mandatory=True, desc="Mean and number of non-zero voxels within the out Z-map")
+    in_file = File(
+        exists=True, mandatory=True, desc="the input image"
+    )
+    mask_csf = File(
+        exists=True, mandatory=True, desc="the csf mask image"
+    )
+    mask_out = File(
+        exists=True, mandatory=True, desc="the outbrain mask image"
+    )
+    mask_edge = File(
+        exists=True, mandatory=True, desc="the sdge mask image"
+    )
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.TraitedSpec)  -*-
 class FeatureSpatialOutputSpec(TraitedSpec):
@@ -183,16 +192,66 @@ class FeatureSpatial(BaseInterface):
     output_spec = FeatureSpatialOutputSpec
 
     def _run_interface(self, runtime):
-        self.edge_fract = np.zeros(len(self.inputs.tot_stat))
-        self.csf_fract = np.zeros(len(self.inputs.tot_stat))
-        for i in range(len(self.inputs.tot_stat)):
-            totSum = self.inputs.tot_stat[i][0] * self.inputs.tot_stat[i][1]
-            csfSum = self.inputs.csf_stat[i][0] * self.inputs.csf_stat[i][1]
-            edgeSum = self.inputs.edge_stat[i][0] * self.inputs.edge_stat[i][1]
-            outSum = self.inputs.out_stat[i][0] * self.inputs.out_stat[i][1]
-            if not (totSum == 0):
-                self.edge_fract[i] = (outSum + edgeSum) / (totSum - csfSum) if not ((totSum - csfSum) == 0) else 0
-                self.csf_fract[i] = csfSum / totSum
+        abs_value = UnaryMaths()
+        abs_value.inputs.operation = "abs"
+        abs_value.inputs.in_file = self.inputs.in_file
+        abs_value_res = abs_value.run()
+
+        tot_stat = ImageStats()
+        tot_stat.inputs.op_string = "-M -V"
+        tot_stat.inputs.split_4d = True
+        tot_stat.inputs.in_file = abs_value_res.outputs.out_file
+        tot_stat_res = tot_stat.run()
+
+        apply_csf_mask = ApplyMask()
+        apply_csf_mask.inputs.mask_file = self.inputs.mask_csf
+        apply_csf_mask.inputs.in_file = abs_value_res.outputs.out_file
+        apply_csf_mask_res = apply_csf_mask.run()
+
+        csf_stat = ImageStats()
+        csf_stat.inputs.op_string = "-M -V"
+        csf_stat.inputs.split_4d = True
+        csf_stat.inputs.in_file = apply_csf_mask_res.outputs.out_file
+        csf_stat_res = csf_stat.run()
+
+        apply_edge_mask = ApplyMask()
+        apply_edge_mask.inputs.mask_file = self.inputs.mask_edge
+        apply_edge_mask.inputs.in_file = abs_value_res.outputs.out_file
+        apply_edge_mask_res = apply_edge_mask.run()
+
+        edge_stat = ImageStats()
+        edge_stat.inputs.op_string = "-M -V"
+        edge_stat.inputs.split_4d = True
+        edge_stat.inputs.in_file = apply_edge_mask_res.outputs.out_file
+        edge_stat_res = edge_stat.run()
+
+        apply_out_mask = ApplyMask()
+        apply_out_mask.inputs.mask_file = self.inputs.mask_out
+        apply_out_mask.inputs.in_file = abs_value_res.outputs.out_file
+        apply_out_mask_res = apply_out_mask.run()
+
+        out_stat = ImageStats()
+        out_stat.inputs.op_string = "-M -V"
+        out_stat.inputs.split_4d = True
+        out_stat.inputs.in_file = apply_out_mask_res.outputs.out_file
+        out_stat_res = out_stat.run()
+
+        tot_stats = tot_stat_res.outputs.out_stat
+        out_stats = out_stat_res.outputs.out_stat
+        edge_stats = edge_stat_res.outputs.out_stat
+        csf_stats = csf_stat_res.outputs.out_stat
+
+        self.edge_fract = np.zeros(len(out_stats))
+        self.csf_fract = np.zeros(len(out_stats))
+
+        for i in range(len(out_stats)):
+            tot_sum = tot_stats[i][0] * tot_stats[i][1]
+            csf_sum = csf_stats[i][0] * csf_stats[i][1]
+            edge_sum = edge_stats[i][0] * edge_stats[i][1]
+            out_sum = out_stats[i][0] * out_stats[i][1]
+            if not (tot_sum == 0):
+                self.edge_fract[i] = (out_sum + edge_sum) / (tot_sum - csf_sum) if not ((tot_sum - csf_sum) == 0) else 0
+                self.csf_fract[i] = csf_sum / tot_sum
             else:
                 self.edge_fract[i] = 0
                 self.csf_fract[i] = 0
@@ -203,6 +262,79 @@ class FeatureSpatial(BaseInterface):
         outputs = self.output_spec().get()
         outputs["edge_fract"] = self.edge_fract
         outputs["csf_fract"] = self.csf_fract
+        return outputs
+
+
+# -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.BaseInterfaceInputSpec)  -*-
+class FeatureSpatialPrepInputSpec(BaseInterfaceInputSpec):
+    in_files = InputMultiObject(File(exists=True), desc="List of zstat files")
+    mask_file = File(
+        exists=True, mandatory=True, desc="the mask image"
+    )
+    out_file = File(desc="the output image")
+
+
+# -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.TraitedSpec)  -*-
+class FeatureSpatialPrepOutputSpec(TraitedSpec):
+    out_file = File(desc="the preprocessed image")
+
+
+# -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.BaseInterface)  -*-
+class FeatureSpatialPrep(BaseInterface):
+    """
+    This node extracts the spatial feature scores.
+
+    """
+
+    input_spec = FeatureSpatialPrepInputSpec
+    output_spec = FeatureSpatialPrepOutputSpec
+
+    def _run_interface(self, runtime):
+        self.inputs.out_file = self._gen_outfilename()
+
+        # Merge mixture modeled thresholded spatial maps.
+        # Note! In case that mixture modeling did not converge, the file will contain two spatial maps.
+        # The latter being the results from a simple null hypothesis test.
+        # In that case, this map will have to be used (the first one will be empty).
+
+        unique_zstat = []
+
+        for in_file in self.inputs.in_files:
+            get_zstat_n = FslNVols()
+            get_zstat_n.inputs.in_file = in_file
+            get_zstat_n_res = get_zstat_n.run()
+            reduced = get_zstat_n_res.outputs.n_vols - 1
+
+            last_zstat = ExtractROI()
+            last_zstat.inputs.t_min = reduced
+            last_zstat.inputs.t_size = 1
+            last_zstat.inputs.in_file = in_file
+            last_zstat_res = last_zstat.run()
+
+            unique_zstat.append(last_zstat_res.outputs.roi_file)
+
+        merge_zstat = fslMerge()
+        merge_zstat.inputs.dimension = 't'
+        merge_zstat.inputs.in_files = unique_zstat
+        merge_zstat_res = merge_zstat.run()
+
+        mask_zstat = ApplyMask()
+        mask_zstat.inputs.in_file = merge_zstat_res.outputs.merged_file
+        mask_zstat.inputs.mask_file = self.inputs.mask_file
+        mask_zstat.inputs.out_file = self.inputs.out_file
+        mask_zstat.run()
+
+        return runtime
+
+    def _gen_outfilename(self):
+        out_file = self.inputs.out_file
+        if not isdefined(out_file):
+            out_file = "masked_zstat.nii.gz"
+        return os.path.abspath(out_file)
+
+    def _list_outputs(self):
+        outputs = self.output_spec().get()
+        outputs["out_file"] = self._gen_outfilename()
         return outputs
 
 
