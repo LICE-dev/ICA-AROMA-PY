@@ -1,1 +1,3 @@
+include LICENSE.md
+include README.md
 recursive-include ica_aroma_py/resources *.nii.gz
