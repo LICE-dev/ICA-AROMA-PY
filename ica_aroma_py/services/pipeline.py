@@ -2,16 +2,13 @@
 
 # Import required modules
 import os
-import argparse
 import subprocess
 import shutil
 from pathlib import Path
 
-from . import ICA_AROMA_functions as aromafunc
-from .classification_plots import classification_plot
+from . import ICA_AROMA_functions as AromaFunc
 
-# Denoising types accepted
-accepted_denTypes = {'nonaggr', 'aggr', 'both', 'no'}
+accepted_den_types = AromaFunc.accepted_den_types
 
 def run_aroma(
     outDir,
@@ -102,7 +99,7 @@ def run_aroma(
                 cancel = True
 
     # Parse the arguments which do not depend on whether a Feat directory has been specified
-    # (keep same variable names as the original script)
+    # (keep the same variable names as the original script)
     outDir = str(outDir)
     dim = int(dim)
 
@@ -113,7 +110,7 @@ def run_aroma(
             cancel = True
 
     # Check if the type of denoising is correctly specified, when specified
-    if denType not in accepted_denTypes:
+    if denType not in accepted_den_types:
         print('Type of denoising was not correctly specified. Non-aggressive denoising will be run.')
         denType = 'nonaggr'
 
@@ -122,7 +119,7 @@ def run_aroma(
         print('\n----------------------------- ICA-AROMA IS CANCELED -----------------------------\n')
         raise RuntimeError('ICA-AROMA was canceled due to invalid input(s).')
 
-    #------------------------------------------- PREPARE -------------------------------------------#
+    # ------------------------------------------- PREPARE -------------------------------------------#
 
     # Define the FSL-bin directory
     if "FSLDIR" not in os.environ:
@@ -179,46 +176,57 @@ def run_aroma(
                 os.remove(os.path.join(outDir, 'bet.nii.gz'))
         else:
             if inFeat:
-                print(' - No example_func was found in the Feat directory. A mask will be created including all voxels with varying intensity over time in the fMRI data. Please check!\n')
+                print(' - No example_func was found in the Feat directory. A mask will be created including all voxels '
+                      'with varying intensity over time in the fMRI data. Please check!\n')
             os.system(' '.join([os.path.join(fslDir, 'fslmaths'),
                                 inFile,
                                 '-Tstd -bin',
                                 mask]))
 
-    #---------------------------------------- Run ICA-AROMA ----------------------------------------#
+    # ---------------------------------------- Run ICA-AROMA ----------------------------------------#
 
     print('Step 1) MELODIC')
-    aromafunc.runICA(fslDir, inFile, outDir, melDir, mask, dim, TR)
+    AromaFunc.run_ica(fslDir, inFile, outDir, melDir, mask, dim, TR)
 
     print('Step 2) Automatic classification of the components')
     print('  - registering the spatial maps to MNI')
     melIC = os.path.join(outDir, 'melodic_IC_thr.nii.gz')
     melIC_MNI = os.path.join(outDir, 'melodic_IC_thr_MNI2mm.nii.gz')
-    aromafunc.register2MNI(fslDir, melIC, melIC_MNI, affmat, warp)
+    AromaFunc.register_2_mni(fslDir, melIC, melIC_MNI, affmat, warp)
 
     print('  - extracting the CSF & Edge fraction features')
     # Determine the ICA-AROMA resources directory (mask files)
     aromaDir = Path(__file__).resolve().parents[1] / 'resources'
-    edgeFract, csfFract = aromafunc.feature_spatial(fslDir, outDir, str(aromaDir), melIC_MNI)
+    edgeFract, csfFract = AromaFunc.feature_spatial(fslDir, outDir, str(aromaDir), melIC_MNI)
 
     print('  - extracting the Maximum RP correlation feature')
     melmix = os.path.join(outDir, 'melodic.ica', 'melodic_mix')
-    maxRPcorr = aromafunc.feature_time_series(melmix, mc)
+    maxRPcorr = AromaFunc.feature_time_series(melmix, mc)
 
     print('  - extracting the High-frequency content feature')
     melFTmix = os.path.join(outDir, 'melodic.ica', 'melodic_FTmix')
-    HFC = aromafunc.feature_frequency(melFTmix, TR)
+    HFC = AromaFunc.feature_frequency(melFTmix, TR)
 
     print('  - classification')
-    motionICs = aromafunc.classification(outDir, maxRPcorr, edgeFract, HFC, csfFract)
+    motionICs = AromaFunc.classification(outDir, maxRPcorr, edgeFract, HFC, csfFract)
 
     if generate_plots:
+        try:
+            from .classification_plots import classification_plot
+        except ModuleNotFoundError as e:
+            raise RuntimeError(
+                "You requested the generation of plots, but the 'plots' dependencies are not installed.\n"
+                "Install the extra with:\n"
+                "  pip install ica-aroma-py[plots]\n"
+                "Or disable plots with -np / --noplots."
+            ) from e
+            
         classification_plot(os.path.join(outDir, 'classification_overview.txt'),
                             outDir)
 
-    if (denType != 'no'):
+    if denType != 'no':
         print('Step 3) Data denoising')
-        aromafunc.denoising(fslDir, inFile, outDir, melmix, denType, motionICs)
+        AromaFunc.denoising(fslDir, inFile, outDir, melmix, denType, motionICs)
 
     print('\n----------------------------------- Finished -----------------------------------\n')
 
@@ -231,66 +239,3 @@ def run_aroma(
         "denoised_nonaggr": os.path.join(outDir, 'denoised_func_data_nonaggr.nii.gz'),
         "denoised_aggr": os.path.join(outDir, 'denoised_func_data_aggr.nii.gz'),
     }
-
-
-#-------------------------------------------- PARSER --------------------------------------------#
-
-def _build_arg_parser():
-    parser = argparse.ArgumentParser(
-        description="Script to run ICA-AROMA v0.3 beta ('ICA-based Automatic Removal Of Motion Artifacts') on fMRI data. "
-                    "See the companion manual for further information."
-    )
-
-    # Required options
-    reqoptions = parser.add_argument_group('Required arguments')
-    reqoptions.add_argument('-o', '-out', dest="outDir", required=True, help='Output directory name')
-
-    # Required options in non-Feat mode
-    nonfeatoptions = parser.add_argument_group('Required arguments - generic mode')
-    nonfeatoptions.add_argument('-i', '-in', dest="inFile", required=False, help='Input file name of fMRI data (.nii.gz)')
-    nonfeatoptions.add_argument('-mc', dest="mc", required=False, help='File name of the motion parameters obtained after motion realingment (e.g., FSL mcflirt). Note that the order of parameters does not matter, should your file not originate from FSL mcflirt. (e.g., /home/user/PROJECT/SUBJECT.feat/mc/prefiltered_func_data_mcf.par')
-    nonfeatoptions.add_argument('-a', '-affmat', dest="affmat", default="", help='File name of the mat-file describing the affine registration (e.g., FSL FLIRT) of the functional data to structural space (.mat file). (e.g., /home/user/PROJECT/SUBJECT.feat/reg/example_func2highres.mat')
-    nonfeatoptions.add_argument('-w', '-warp', dest="warp", default="", help='File name of the warp-file describing the non-linear registration (e.g., FSL FNIRT) of the structural data to MNI152 space (.nii.gz). (e.g., /home/user/PROJECT/SUBJECT.feat/reg/highres2standard_warp.nii.gz)')
-    nonfeatoptions.add_argument('-m', '-mask', dest="mask", default="", help='File name of the mask to be used for MELODIC (denoising will be performed on the original/non-masked input data)')
-
-    # Required options in Feat mode
-    featoptions = parser.add_argument_group('Required arguments - FEAT mode')
-    featoptions.add_argument('-f', '-feat', dest="inFeat", required=False, help='Feat directory name (Feat should have been run without temporal filtering and including registration to MNI152)')
-
-    # Optional options
-    optoptions = parser.add_argument_group('Optional arguments')
-    optoptions.add_argument('-tr', dest="TR", help='TR in seconds', type=float)
-    optoptions.add_argument('-den', dest="denType", default="nonaggr", help="Type of denoising strategy: 'no': only classification, no denoising; 'nonaggr': non-aggresssive denoising (default); 'aggr': aggressive denoising; 'both': both aggressive and non-aggressive denoising (seperately)")
-    optoptions.add_argument('-md', '-meldir', dest="melDir", default="", help='MELODIC directory name, in case MELODIC has been run previously.')
-    optoptions.add_argument('-dim', dest="dim", default=0, help='Dimensionality reduction into #num dimensions when running MELODIC (default: automatic estimation; i.e. -dim 0)', type=int)
-    optoptions.add_argument('-ow', '-overwrite', dest="overwrite", action='store_true', help='Overwrite existing output', default=False)
-    optoptions.add_argument('-np', '-noplots', dest="generate_plots", action='store_false', help='Plot component classification overview similar to plot in the main AROMA paper', default=True)
-
-    return parser
-
-
-def main():
-    # Keep the original CLI behavior, but delegate all logic to run_aroma()
-    parser = _build_arg_parser()
-    args = parser.parse_args()
-
-    run_aroma(
-        outDir=args.outDir,
-        inFile=args.inFile,
-        mc=args.mc,
-        affmat=args.affmat,
-        warp=args.warp,
-        mask_in=args.mask,
-        inFeat=args.inFeat,
-        TR=args.TR,
-        denType=args.denType,
-        melDir=args.melDir,
-        dim=args.dim,
-        overwrite=args.overwrite,
-        generate_plots=args.generate_plots,
-    )
-
-
-# allow use of module on its own
-if __name__ == '__main__':
-    main()

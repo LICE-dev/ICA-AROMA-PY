@@ -12,14 +12,21 @@ setup(
     python_requires=">=3.10",
     install_requires=[
         "numpy==2.2.4",
-        # Se per ora tieni ancora future/past in ICA_AROMA_functions.py, aggiungi:
-        # "future",
+        "nibabel>=5.3.0,<6",
     ],
     extras_require={
+        "nipype": [
+            "nipype==1.10.0",
+        ],
         "plots": [
             "pandas",
             "matplotlib==3.10.1",
             "seaborn>=0.13.2,<0.14",
         ],
+    },
+    entry_points={
+        "console_scripts": [
+            "ica-aroma-py=ica_aroma_py.services.cli:main",
+        ]
     },
 )
