@@ -5,7 +5,7 @@ setup(
     version="0.1.2",
     description="ICA-AROMA packaged for Python import usage.",
     license="Apache-2.0",
-    url="https://github.com/LICE-dev/ICA-AROMA-PY"
+    url="https://github.com/LICE-dev/ICA-AROMA-PY",
     packages=find_packages(),
     include_package_data=True,
     package_data={
