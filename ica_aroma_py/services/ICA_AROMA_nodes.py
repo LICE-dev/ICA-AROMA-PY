@@ -306,6 +306,7 @@ class FeatureTimeSeriesInputSpec(BaseInterfaceInputSpec):
     mc = File(
         exists=True, mandatory=True, desc="file containing the realignment parameters"
     )
+    seed = traits.Int(0, usedefault=True, desc="RNG seed for the split-half sampling; fixed for reproducibility")
 
 # -*- DISCLAIMER: this class extends a Nipype class (nipype.interfaces.base.TraitedSpec)  -*-
 class FeatureTimeSeriesOutputSpec(TraitedSpec):
@@ -326,7 +327,7 @@ class FeatureTimeSeries(BaseInterface):
     output_spec = FeatureTimeSeriesOutputSpec
 
     def _run_interface(self, runtime):
-        self.max_rp_corr = AromaFunc.feature_time_series(self.inputs.mel_mix, self.inputs.mc)
+        self.max_rp_corr = AromaFunc.feature_time_series(self.inputs.mel_mix, self.inputs.mc, seed=self.inputs.seed)
         return runtime
 
     def _list_outputs(self):
