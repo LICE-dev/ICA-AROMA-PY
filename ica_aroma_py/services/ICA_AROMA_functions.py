@@ -225,7 +225,7 @@ def cross_correlation(a, b):
     return np.corrcoef(a.T, b.T)[:n_cols_a, n_cols_a:]
 
 
-def feature_time_series(mel_mix, mc):
+def feature_time_series(mel_mix, mc, seed=None):
     """ This function extracts the maximum RP correlation feature scores. 
     It determines the maximum robust correlation of each component time-series
     with a model of 72 realignment parameters.
@@ -276,9 +276,10 @@ def feature_time_series(mel_mix, mc):
 
     # Max correlations for multiple splits of the dataset (for a robust estimate)
     max_correls = np.empty((n_splits, n_mix_cols))
+    rng = random.Random(seed)
     for i in range(n_splits):
         # Select a random subset of 90% of the dataset rows (*without* replacement)
-        chosen_rows = random.sample(population=range(n_mix_rows),
+        chosen_rows = rng.sample(population=range(n_mix_rows),
                                     k=n_rows_to_choose)
 
         # Combined correlations between RP and IC time-series, squared and non-squared
