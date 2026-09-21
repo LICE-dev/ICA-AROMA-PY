@@ -1,9 +1,9 @@
 # -*- DISCLAIMER: this file contains code derived from Nipype (https://github.com/nipy/nipype/blob/master/LICENSE)  -*-
-from nipype.interfaces.fsl import FLIRT, UnaryMaths, ImageStats, ApplyMask, ExtractROI, Merge as fslMerge
+from nipype.interfaces.fsl import FLIRT
 from nipype.interfaces.fsl.base import FSLCommand, FSLCommandInputSpec
 from nipype.interfaces.base import (traits, TraitedSpec, File, isdefined, BaseInterfaceInputSpec, BaseInterface,
                                     InputMultiObject)
-from nibabel import load
+from nibabel import load, Nifti1Image
 import shutil
 import os
 import numpy as np
@@ -192,69 +192,37 @@ class FeatureSpatial(BaseInterface):
     output_spec = FeatureSpatialOutputSpec
 
     def _run_interface(self, runtime):
-        abs_value = UnaryMaths()
-        abs_value.inputs.operation = "abs"
-        abs_value.inputs.in_file = self.inputs.in_file
-        abs_value_res = abs_value.run()
+        thresh_data = load(self.inputs.in_file).get_fdata()
+        csf_data = load(self.inputs.mask_csf).get_fdata()
+        edge_data = load(self.inputs.mask_edge).get_fdata()
+        out_data = load(self.inputs.mask_out).get_fdata()
 
-        tot_stat = ImageStats()
-        tot_stat.inputs.op_string = "-M -V"
-        tot_stat.inputs.split_4d = True
-        tot_stat.inputs.in_file = abs_value_res.outputs.out_file
-        tot_stat_res = tot_stat.run()
+        n_ics = thresh_data.shape[-1]
+        self.edge_fract = np.zeros(n_ics)
+        self.csf_fract = np.zeros(n_ics)
 
-        apply_csf_mask = ApplyMask()
-        apply_csf_mask.inputs.mask_file = self.inputs.mask_csf
-        apply_csf_mask.inputs.in_file = abs_value_res.outputs.out_file
-        apply_csf_mask_res = apply_csf_mask.run()
+        for i in range(n_ics):
+            ic_data = np.abs(thresh_data[..., i])
 
-        csf_stat = ImageStats()
-        csf_stat.inputs.op_string = "-M -V"
-        csf_stat.inputs.split_4d = True
-        csf_stat.inputs.in_file = apply_csf_mask_res.outputs.out_file
-        csf_stat_res = csf_stat.run()
+            nonzero_mask = ic_data > 0
+            if not np.any(nonzero_mask):
+                continue
 
-        apply_edge_mask = ApplyMask()
-        apply_edge_mask.inputs.mask_file = self.inputs.mask_edge
-        apply_edge_mask.inputs.in_file = abs_value_res.outputs.out_file
-        apply_edge_mask_res = apply_edge_mask.run()
+            tot_sum = np.mean(ic_data[nonzero_mask]) * np.sum(nonzero_mask)
 
-        edge_stat = ImageStats()
-        edge_stat.inputs.op_string = "-M -V"
-        edge_stat.inputs.split_4d = True
-        edge_stat.inputs.in_file = apply_edge_mask_res.outputs.out_file
-        edge_stat_res = edge_stat.run()
+            csf_mask = nonzero_mask & (csf_data > 0)
+            csf_sum = np.mean(ic_data[csf_mask]) * np.sum(csf_mask) if np.any(csf_mask) else 0.0
 
-        apply_out_mask = ApplyMask()
-        apply_out_mask.inputs.mask_file = self.inputs.mask_out
-        apply_out_mask.inputs.in_file = abs_value_res.outputs.out_file
-        apply_out_mask_res = apply_out_mask.run()
+            edge_mask = nonzero_mask & (edge_data > 0)
+            edge_sum = np.mean(ic_data[edge_mask]) * np.sum(edge_mask) if np.any(edge_mask) else 0.0
 
-        out_stat = ImageStats()
-        out_stat.inputs.op_string = "-M -V"
-        out_stat.inputs.split_4d = True
-        out_stat.inputs.in_file = apply_out_mask_res.outputs.out_file
-        out_stat_res = out_stat.run()
+            out_mask = nonzero_mask & (out_data > 0)
+            out_sum = np.mean(ic_data[out_mask]) * np.sum(out_mask) if np.any(out_mask) else 0.0
 
-        tot_stats = tot_stat_res.outputs.out_stat
-        out_stats = out_stat_res.outputs.out_stat
-        edge_stats = edge_stat_res.outputs.out_stat
-        csf_stats = csf_stat_res.outputs.out_stat
-
-        self.edge_fract = np.zeros(len(out_stats))
-        self.csf_fract = np.zeros(len(out_stats))
-
-        for i in range(len(out_stats)):
-            tot_sum = tot_stats[i][0] * tot_stats[i][1]
-            csf_sum = csf_stats[i][0] * csf_stats[i][1]
-            edge_sum = edge_stats[i][0] * edge_stats[i][1]
-            out_sum = out_stats[i][0] * out_stats[i][1]
-            if not (tot_sum == 0):
-                self.edge_fract[i] = (out_sum + edge_sum) / (tot_sum - csf_sum) if not ((tot_sum - csf_sum) == 0) else 0
+            if tot_sum != 0:
                 self.csf_fract[i] = csf_sum / tot_sum
-            else:
-                self.edge_fract[i] = 0
-                self.csf_fract[i] = 0
+                denom_edge = tot_sum - csf_sum
+                self.edge_fract[i] = (out_sum + edge_sum) / denom_edge if denom_edge != 0 else 0
 
         return runtime
 
@@ -297,32 +265,24 @@ class FeatureSpatialPrep(BaseInterface):
         # The latter being the results from a simple null hypothesis test.
         # In that case, this map will have to be used (the first one will be empty).
 
-        unique_zstat = []
+        last_zstats = []
+        affine = None
+        header = None
 
         for in_file in self.inputs.in_files:
-            get_zstat_n = FslNVols()
-            get_zstat_n.inputs.in_file = in_file
-            get_zstat_n_res = get_zstat_n.run()
-            reduced = get_zstat_n_res.outputs.n_vols - 1
+            img = load(in_file)
+            data = img.get_fdata()
+            last_zstats.append(data[..., -1] if data.ndim == 4 else data)
+            if affine is None:
+                affine = img.affine
+                header = img.header
 
-            last_zstat = ExtractROI()
-            last_zstat.inputs.t_min = reduced
-            last_zstat.inputs.t_size = 1
-            last_zstat.inputs.in_file = in_file
-            last_zstat_res = last_zstat.run()
+        merged = np.stack(last_zstats, axis=-1).astype(np.float32)
 
-            unique_zstat.append(last_zstat_res.outputs.roi_file)
+        mask_data = load(self.inputs.mask_file).get_fdata() > 0
+        merged[~mask_data] = 0
 
-        merge_zstat = fslMerge()
-        merge_zstat.inputs.dimension = 't'
-        merge_zstat.inputs.in_files = unique_zstat
-        merge_zstat_res = merge_zstat.run()
-
-        mask_zstat = ApplyMask()
-        mask_zstat.inputs.in_file = merge_zstat_res.outputs.merged_file
-        mask_zstat.inputs.mask_file = self.inputs.mask_file
-        mask_zstat.inputs.out_file = self.inputs.out_file
-        mask_zstat.run()
+        Nifti1Image(merged, affine, header=header).to_filename(self.inputs.out_file)
 
         return runtime
 

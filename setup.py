@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="ica-aroma-py",
-    version="0.1.2",
+    version="0.1.3",
     description="ICA-AROMA packaged for Python import usage.",
     license="Apache-2.0",
     url="https://github.com/LICE-dev/ICA-AROMA-PY",
@@ -13,16 +13,16 @@ setup(
     },
     python_requires=">=3.10",
     install_requires=[
-        "numpy==2.2.4",
+        "numpy>=2.2.4",
         "nibabel>=5.3.0,<6",
     ],
     extras_require={
         "nipype": [
-            "nipype==1.10.0",
+            "nipype>=1.12.0",
         ],
         "plots": [
             "pandas",
-            "matplotlib==3.10.1",
+            "matplotlib>=3.10.1",
             "seaborn>=0.13.2,<0.14",
         ],
     },
