@@ -526,7 +526,7 @@ def classification(out_dir, max_rp_corr, edge_fract, HFC, csf_fract):
     if motion_ics.size > 1:  # and len(motion_ics) != 0: if motion_ics is not None and
         txt.write(','.join(['{:.0f}'.format(num) for num in (motion_ics + 1)]))
     elif motion_ics.size == 1:
-        txt.write('{:.0f}'.format(motion_ics + 1))
+        txt.write('{:.0f}'.format(motion_ics[0] + 1))
     txt.close()
 
     # Create a summary overview of the classification
