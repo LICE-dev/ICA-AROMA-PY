@@ -512,7 +512,10 @@ def classification(out_dir, max_rp_corr, edge_fract, HFC, csf_fract):
     proj = hyp[0] + np.dot(x.T, hyp[1:])
 
     # Classify the ICs
-    motion_ics = np.squeeze(np.array(np.where((proj > 0) + (csf_fract > thr_csf) + (HFC > thr_HFC))))
+    # Keep the component indices one-dimensional, including when exactly one
+    # component is classified as motion.  Nipype exposes these indices through
+    # a List trait, which cannot accept the scalar produced by ``squeeze``.
+    motion_ics = np.flatnonzero((proj > 0) + (csf_fract > thr_csf) + (HFC > thr_HFC))
 
     # Put the feature scores in a text file
     np.savetxt(os.path.join(out_dir, 'feature_scores.txt'),
@@ -523,7 +526,7 @@ def classification(out_dir, max_rp_corr, edge_fract, HFC, csf_fract):
     if motion_ics.size > 1:  # and len(motion_ics) != 0: if motion_ics is not None and
         txt.write(','.join(['{:.0f}'.format(num) for num in (motion_ics + 1)]))
     elif motion_ics.size == 1:
-        txt.write('{:.0f}'.format(motion_ics + 1))
+        txt.write('{:.0f}'.format(motion_ics[0] + 1))
     txt.close()
 
     # Create a summary overview of the classification
