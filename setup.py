@@ -2,6 +2,7 @@ from pathlib import Path
 from setuptools import setup, find_namespace_packages
 
 this_directory = Path(__file__).parent
+# Legge il file README.md come descrizione estesa (long_description) per la pagina del pacchetto su PyPI
 long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 setup(
