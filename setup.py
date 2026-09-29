@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="ica-aroma-py",
-    version="0.1.3",
+    version="0.1.4",
     description="ICA-AROMA packaged for Python import usage.",
     license="Apache-2.0",
     url="https://github.com/LICE-dev/ICA-AROMA-PY",
