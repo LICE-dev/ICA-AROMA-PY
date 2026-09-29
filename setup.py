@@ -2,12 +2,12 @@ from pathlib import Path
 from setuptools import setup, find_namespace_packages
 
 this_directory = Path(__file__).parent
-# Legge il file README.md come descrizione estesa (long_description) per la pagina del pacchetto su PyPI
+# Read the contents of README.md to serve as the long_description on PyPI
 long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="ica-aroma-py",
-    version="0.1.4",
+    version="0.1.5",
     description="ICA-AROMA packaged for Python import usage.",
     long_description=long_description,
     long_description_content_type="text/markdown",
